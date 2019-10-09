@@ -127,13 +127,6 @@ func GetLogOutputPath() string {
 	return ""
 }
 
-// get http server port
-func GetHttpServerPort() string {
-	if rewardConfig != nil {
-		return rewardConfig.HttpPort
-	}
-	return ""
-}
 
 // get cos observe node database config list
 func GetCosObserveNodeDbConfigList() ([]*DbConfig, error) {
