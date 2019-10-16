@@ -97,5 +97,5 @@ func getLogDirPath() (string,error)  {
 	if err != nil {
 		return "", nil
 	}
-	return filepath.Join(logDir, "bp_reward"), nil
+	return filepath.Join(logDir, "bp_reward_logs"), nil
 }
