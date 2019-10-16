@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"strconv"
 	"sync"
 	cosUtil "github.com/coschain/contentos-go/common"
 )
@@ -39,6 +40,11 @@ type EnvConfig struct {
 	LogPath         string    `json:"logPath"`
 	BlockLogDbList  []BlockLogDbInfo `json:"blockLogDbList"`
 	FailDistributeFilePath string `json:"failDistributeFilePath"`
+	RewardBpList  []string    `json:"rewardBpList"`
+	SnapshotInterval string `json:"snapshotInterval"`
+	DistributeInterval string `json:"distributeInterval"`
+	DistributeTimeInterval string `json:"distributeTimeInterval"`
+	ServiceStarPeriodBlockNum string `json:"serviceStarPeriodBlockNum"`
 }
 
 type RewardConfig struct {
@@ -62,6 +68,11 @@ var (
 	configOnce sync.Once
 	env = EnvDev // default env is dev
 	httpPort = "8000" //default http port of web server
+	ServiceStarPeriodBlockNum uint64
+	DistributeTimeInterval int64
+	DistributeInterval uint64
+	SnapshotTimeInterval int64
+	OfficialBpList []string
 )
 
 
@@ -88,6 +99,25 @@ func LoadRewardConfig() error {
 			} else {
 				return errors.New("fail to get reward config of unKnown env")
 			}
+
+			SnapshotTimeInterval,err = strconv.ParseInt(rewardConfig.SnapshotInterval, 10, 64)
+			if err != nil {
+				return errors.New(fmt.Sprintf("fail to convert SnapshotInterval:%v to int64, the error is %v", rewardConfig.SnapshotInterval, err))
+			}
+			DistributeTimeInterval,err = strconv.ParseInt(rewardConfig.DistributeTimeInterval , 10, 64)
+			if err != nil {
+				return errors.New(fmt.Sprintf("fail to convert DistributeTimeInterval:%v to int64, the error is %v", rewardConfig.DistributeTimeInterval, err))
+			}
+			DistributeInterval,err = strconv.ParseUint(rewardConfig.DistributeInterval, 10, 64)
+			if err != nil {
+				return errors.New(fmt.Sprintf("fail to convert DistributeInterval:%v to int64, the error is %v", rewardConfig.DistributeInterval, err))
+			}
+
+			ServiceStarPeriodBlockNum,err = strconv.ParseUint(rewardConfig.ServiceStarPeriodBlockNum, 10, 64)
+			if err != nil {
+				return errors.New(fmt.Sprintf("fail to convert ServiceStarPeriodBlockNum:%v to int64, the error is %v", rewardConfig.ServiceStarPeriodBlockNum, err))
+			}
+			OfficialBpList = rewardConfig.RewardBpList
 		}
 	}
 	return nil

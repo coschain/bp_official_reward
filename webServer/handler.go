@@ -29,7 +29,7 @@ const (
 //
 func getUserRewardHistory(w http.ResponseWriter, r *http.Request)  {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
-
+    logger := logs.GetLogger()
 	res := types.UserRewardHistoryResponse{
 		List: make([]*types.UserRewardHistory,0),
 	}
@@ -51,6 +51,7 @@ func getUserRewardHistory(w http.ResponseWriter, r *http.Request)  {
 		if err == nil {
 			index = pIndex
 		} else {
+			logger.Errorf("getUserRewardHistory: fail to convert string %v to int", pIndexStr)
 			res.Status = types.StatusParamParseError
 			res.Msg = "params index error"
 			writeResponse(w, res)
@@ -106,6 +107,7 @@ func getUserRewardHistory(w http.ResponseWriter, r *http.Request)  {
 //
 func getBpRewardHistory(w http.ResponseWriter, r *http.Request)  {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
+	logger := logs.GetLogger()
 	res := &types.RewardInfoResponse{
 		List: make([]*types.RewardInfo, 0),
 	}
@@ -116,6 +118,7 @@ func getBpRewardHistory(w http.ResponseWriter, r *http.Request)  {
 	if err == nil {
 		p,err := strconv.Atoi(periodStr)
 		if err != nil {
+			logger.Errorf("getBpRewardHistory: fail to convert string %v to int", periodStr)
 			res.Status = types.StatusParamParseError
 			writeResponse(w, res)
 			return

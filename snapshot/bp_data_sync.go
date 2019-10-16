@@ -1,14 +1,13 @@
 package snapshot
 
 import (
+	"bp_official_reward/config"
 	"bp_official_reward/db"
 	"bp_official_reward/distribute"
 	"bp_official_reward/logs"
 	"github.com/sirupsen/logrus"
 	"time"
 )
-
-const syncInterval = 3 * time.Hour //every 3 hour to snapshot
 
 type BpSyncService struct {
 	stopCh      chan bool
@@ -25,7 +24,7 @@ func NewBpSyncService() (*BpSyncService, error) {
 
 func (s *BpSyncService) StartSyncService() {
 	s.stopCh = make(chan bool)
-	ticker := time.NewTicker(time.Duration(syncInterval))
+	ticker := time.NewTicker(time.Duration(config.SnapshotTimeInterval))
 	go func() {
 		for {
 			select {
@@ -56,12 +55,12 @@ func (s *BpSyncService) snapshot() {
 
 
 	//1. get official bp vote record
-	recList,err := db.GetBpVoteRecords(curTime, distribute.OfficialBpList)
+	recList,err := db.GetBpVoteRecords(curTime, config.OfficialBpList)
 	if err != nil {
 		s.logger.Errorf("snapshot: Fail to get vote records of official bp on time:%v, the error is %v", err, curTime)
 		s.logger.Infoln("Finish this round snapshot")
 		//sync official bp's voter info
-		s.syncVotersAccountInfo(curTime, distribute.OfficialBpList)
+		s.syncVotersAccountInfo(curTime, config.OfficialBpList)
 		return
 	} else {
 		if len(recList) > 0 {
@@ -71,7 +70,7 @@ func (s *BpSyncService) snapshot() {
 				s.logger.Errorf("snapshot: Fail to batch insert official bp vote record on time:%v, the error is %v", curTime, err)
 				s.logger.Infoln("Finish this round snapshot")
 				//sync official bp's voter info
-				s.syncVotersAccountInfo(curTime, distribute.OfficialBpList)
+				s.syncVotersAccountInfo(curTime, config.OfficialBpList)
 				return
 			}
 		} else {
@@ -81,7 +80,7 @@ func (s *BpSyncService) snapshot() {
 	}
 
 	//2. get bp's vote relation
-	rList,err := db.GetBpVoteRelation(curTime, distribute.OfficialBpList)
+	rList,err := db.GetBpVoteRelation(curTime, config.OfficialBpList)
 	if err != nil {
 		s.logger.Errorf("snapshot: Fail to get bp vote relation, the error is %v", err)
 	} else {
@@ -91,7 +90,7 @@ func (s *BpSyncService) snapshot() {
 			s.logger.Errorf("snapshot: Fail to batch insert vote relations on time:%v, the error is %v", curTime ,err)
 		}
 	}
-	bpList := distribute.OfficialBpList
+	bpList := config.OfficialBpList
 	if len(rList) > 0 {
 		var list []string
 		for _,relation := range rList {

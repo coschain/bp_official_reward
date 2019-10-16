@@ -441,7 +441,7 @@ func GetBpVoteRecords(t time.Time, officialBpList []string) ([]*types.BpVoteReco
 	}
 	for _,rec := range oriRecList {
 		record := &types.BpVoteRecord{
-			VoteId: utils.GenerateId(t, rec.Voter, rec.Producer, strconv.FormatBool(rec.Cancel)),//timestamp + voter + producer + vote operation for voteId
+			VoteId: utils.GenerateId(t, rec.Voter, rec.Producer, strconv.FormatBool(rec.Cancel) + strconv.FormatUint(rec.BlockHeight, 10)),//timestamp + voter + producer + vote operation + block_height for voteId
 			BlockHeight: rec.BlockHeight,
 			BlockTime: rec.BlockTime,
 			Voter: rec.Voter,
@@ -498,7 +498,7 @@ func BatchInsertVoteRecord(list []*types.BpVoteRecord) error {
 	}
 	_,err = db.DB().Exec(sql)
 	if err != nil {
-		logger.Errorf("BactchInsertVoteRecord: fail to batch insert vote relations, the error is %v", err)
+		logger.Errorf("BactchInsertVoteRecord: fail to batch insert vote record, the error is %v", err)
 	}
 	return err
 }

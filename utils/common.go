@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	mRand "math/rand"
+	"math"
 )
 
 // generate mainet cos transfer tx id
@@ -28,9 +30,12 @@ func GetTxHashFromCOSTransferTxId(txId string) string {
 }
 
 func GenerateId(t time.Time, orgs ...string) string {
+	source := mRand.NewSource(time.Now().UnixNano())
+	r := mRand.New(source)
+	rStr := strconv.FormatInt(r.Int63n(math.MaxInt64), 10)
 	timestamp := t.Unix()
 	timeStr := strconv.FormatInt(timestamp, 10)
-	str := timeStr + strings.Join(orgs, "_")
+	str := timeStr + strings.Join(orgs, "_") + rStr
 	h := md5.New()
 	h.Write([]byte(str))
 	return hex.EncodeToString(h.Sum(nil))

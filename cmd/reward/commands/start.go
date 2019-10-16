@@ -34,8 +34,14 @@ var StartCmd = func() *cobra.Command {
 func startService(cmd *cobra.Command, args []string)  {
 	fmt.Println("start swap service")
 
+	err := config.SetConfigEnv(svEnv)
+	if err != nil {
+		fmt.Printf("StartService:fail to set env")
+		os.Exit(1)
+	}
+
 	//load config json file
-	err := config.LoadRewardConfig()
+	err = config.LoadRewardConfig()
 	if err != nil {
 		fmt.Println("StartService:fail to load config file ")
 		os.Exit(1)
@@ -47,12 +53,6 @@ func startService(cmd *cobra.Command, args []string)  {
 		os.Exit(1)
 	}
 	logger.Debug("start swap token service")
-
-	err = config.SetConfigEnv(svEnv)
-	if err != nil {
-		logger.Error("StartService:fail to set env")
-		os.Exit(1)
-	}
 
 	//start db service
 	err = db.StartDbService()
