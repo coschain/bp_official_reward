@@ -3,6 +3,9 @@ package utils
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"github.com/coschain/contentos-go/common/constants"
+	"github.com/shopspring/decimal"
+	"math/big"
 	"strconv"
 	"strings"
 	"time"
@@ -43,4 +46,15 @@ func CheckIsNotEmptyStr(str string) bool {
 
 func ConvertTimeToStamp(t time.Time) string {
 	return t.Format("2006-01-02 15:04:05")
+}
+
+func FormatFloatValue(val float64, prec int) string {
+	return strconv.FormatFloat(val, 'f', prec, 32)
+}
+
+func CalcActualVest(amount uint64) string  {
+	bigAmount := new(big.Int).SetUint64(amount)
+	d := decimal.NewFromBigInt(bigAmount, 0)
+	actual,_ := d.QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
+	return actual.String()
 }

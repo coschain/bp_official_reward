@@ -1,12 +1,18 @@
 package types
 
-import "time"
+import (
+	"time"
+)
 
 const (
 	ProcessingStatusDefault = 0
 	ProcessingStatusSuccess = 1
 	ProcessingStatusFail    = 2
-	ProcessingStatusNotTransfer = 3
+	ProcessingStatusNotNeedTransfer = 3
+	ProcessingStatusGenTxFail = 4
+
+	RewardTypeToVoter = 0   //distribute reward to bp
+	RewardTypeToBp = 1      //distribute reward to voter
 )
 
 type AccountInfo struct {
@@ -37,18 +43,23 @@ type BpVoteRelation struct {
 
 type BpRewardRecord struct {
 	Id  string  `gorm:primary_key`
-	Period int64   `gorm:"not null"`
+	Period uint64
+	RewardType int  `gorm:"not null"`
 	Amount string  `gorm:"not null"`
+	RewardRate float64 `gorm:"not null"`
 	Bp     string `gorm:"not null"`
 	Voter  string `gorm:"not null"`
 	TransferHash string `gorm:"not null"`
 	Time   int64   `gorm:"not null"`
 	Status  int     `gorm:"not null"`
-	Vest   uint64    `gorm:"not null"`
+	Vest   string    `gorm:"not null"`
 	TotalBlockReward string `gorm:"not null"`
 	SingleBlockReward string `gorm:"not null"`
 	TotalVoterVest   string  `gorm:"not null"`
 	CreatedBlockNumber uint64 `gorm:"not null"`
+	DistributeBlockNumber  uint64 `gorm:"not null"`
+	AnnualizedRate  float64  `gorm:"not null"`
+
 }
 
 type CosTrxInfo struct {
@@ -68,3 +79,15 @@ type CosTxInvoice struct {
 	Cpu_usage uint64 `json:"cpu_usage"`
 	Net_usage uint64 `json:"net_usage"`
 }
+
+type LibInfo struct {
+	Lib  uint64
+	LastCheckTime uint32
+}
+
+type BpBlockStatistics struct {
+	TotalCount  uint64
+	BlockProducer string
+}
+
+

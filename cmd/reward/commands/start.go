@@ -70,7 +70,8 @@ func startService(cmd *cobra.Command, args []string)  {
 	}
 	snapshotSv.StartSyncService()
 	//start every week reward distribute service
-	err = distribute.StartDistributeService()
+	distributeSv := distribute.NewDistributeService()
+	err = distributeSv.StartDistributeService()
 	if err != nil {
 		logger.Errorf("StartDistributeService: fail to start distribute service, the error is %v", err)
 		os.Exit(1)
@@ -79,8 +80,10 @@ func startService(cmd *cobra.Command, args []string)  {
 	checkSv.StartCheck()
 	defer func() {
 		snapshotSv.StopSyncService()
-		distribute.StopDistributeService()
+		distributeSv.StopDistributeService()
 		checkSv.StopCheck()
+
+
 	}()
 	//start http service
 	err = webServer.StartServer()

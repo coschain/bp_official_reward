@@ -28,7 +28,7 @@ func NewFileRotateHooker(path string, age uint32) logrus.Hook {
 		rotatelogs.WithLinkName(linkPath),
 		rotatelogs.WithRotationTime(time.Duration(3600)*time.Second),
 	)
-	// set swaplog file max age
+	// set reward log file max age
 	if age > 0 {
 		rotatelogs.WithMaxAge(time.Duration(age) * time.Second).Configure(writer)
 	}

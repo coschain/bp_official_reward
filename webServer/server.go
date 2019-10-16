@@ -13,7 +13,10 @@ import (
 )
 
 const (
-	getRewardHistory = "/api/getRewardHistory"
+	getUserRewardHistoryUrl = "/api/getUserRewardHistory"
+	getBpRewardHistoryUrl = "/api/getBpRewardHistory"
+	getBpEstimateRewardUrl  = "/api/getBpEstimateReward"
+	getHistoricalVoteInfoUrl = "/api/getHistoricalVoteInfo"
 
 	writeTimeOut = 2
 	readTimeOut  = 2
@@ -52,8 +55,19 @@ func StartServer() error {
 
 func initHandlers() *http.ServeMux {
 	serverMux := http.NewServeMux()
-	serverMux.HandleFunc(getRewardHistory, func(writer http.ResponseWriter, request *http.Request) {
+	serverMux.HandleFunc(getUserRewardHistoryUrl, func(writer http.ResponseWriter, request *http.Request) {
 		getUserRewardHistory(writer, request)
+	})
+	serverMux.HandleFunc(getBpRewardHistoryUrl, func(writer http.ResponseWriter, request *http.Request) {
+		getBpRewardHistory(writer, request)
+	})
+
+	serverMux.HandleFunc(getBpEstimateRewardUrl, func(writer http.ResponseWriter, request *http.Request) {
+		estimateBpRewardOnNextPeriod(writer, request)
+	})
+
+	serverMux.HandleFunc(getHistoricalVoteInfoUrl, func(writer http.ResponseWriter, request *http.Request) {
+		getHistoricalVoteInfo(writer, request)
 	})
 	return serverMux
 }

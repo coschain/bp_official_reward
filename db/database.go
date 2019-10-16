@@ -5,6 +5,7 @@ import (
 	"bp_official_reward/logs"
 	"bp_official_reward/types"
 	"bp_official_reward/utils"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -250,14 +251,14 @@ func GetUserVestInfo(acctName string, t time.Time) (*types.AccountInfo, error) {
 //
 // get all voter's info of all official bpList
 //
-func GetVoterInfoByBp(t time.Time, officialBpList []string) ([]*types.AccountInfo, error) {
+func GetVoterInfoByBp(t time.Time, bpList []string) ([]*types.AccountInfo, error) {
 	logger := logs.GetLogger()
 	db,err := getCosObserveNodeDb()
 	if err != nil {
 		logger.Errorf("GetVoterInfoByBp: fail to get observe node db, the error is %v", db)
 		return nil, err
 	}
-	filter := "name in (SELECT DISTINCT voter from producer_vote_states WHERE " +  getDbFilterCondition(officialBpList, "producer") + ")"
+	filter := "name in (SELECT DISTINCT voter from producer_vote_states WHERE " + getDbFilterCondition(bpList, "producer") + ")"
 	var (
 	    holders []*plugins.Holder
 		voterList []*types.AccountInfo
@@ -342,13 +343,14 @@ func GetBpVoteRelation(t time.Time, officialBpList []string) ([]*types.BpVoteRel
 		logger.Errorf("GetBpVoteRelation: fail to get observe node db, the error is %v", db)
 		return nil, err
 	}
-	filter := getDbFilterCondition(officialBpList, "producer")
+	//filter := getDbFilterCondition(officialBpList, "producer")
 	var (
 		stateList []*plugins.ProducerVoteState
 		rList []*types.BpVoteRelation
 
 	)
-	err = db.Where(filter).Find(&stateList).Order("producer ASC").Error
+	//err = db.Where(filter).Find(&stateList).Order("producer ASC").Error
+	err = db.Find(&stateList).Order("producer ASC").Error
 	if err != nil {
 		logger.Errorf("GetBpVoteRelation: fail to get bp vote relation, the error is %v", err)
 		return nil, err
@@ -428,8 +430,8 @@ func GetBpVoteRecords(t time.Time, officialBpList []string) ([]*types.BpVoteReco
 		oriRecList []*plugins.ProducerVoteRecord
 		recList []*types.BpVoteRecord
 	)
-	filter := getDbFilterCondition(officialBpList, "producer")
-	err = db.Where(filter).Find(&oriRecList).Order("producer ASC").Error
+	//filter := getDbFilterCondition(officialBpList, "producer")
+	err = db.Find(&oriRecList).Order("producer ASC").Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetBpVoteRecords: fail to get bp vote records, the error is %v", err)
@@ -477,13 +479,13 @@ func BatchInsertVoteRecord(list []*types.BpVoteRecord) error {
 	logger := logs.GetLogger()
 	length := len(list)
 	if length < 1{
-		log.Error("BactchInsertVoteRecord: fail to insert empty bp vote record")
+		log.Error("BatchInsertVoteRecord: fail to insert empty bp vote record")
 		return errors.New("can't insert empty bp vote record")
 	}
 
 	db,err := getServiceDB()
 	if err != nil {
-		logger.Errorf("BactchInsertVoteRecord: fail to get db,the error is %v", err)
+		logger.Errorf("BatchInsertVoteRecord: fail to get db,the error is %v", err)
 		return err
 	}
 	sql := "INSERT INTO bp_vote_records (vote_id, block_height, block_time, voter, producer, cancel, time) VALUES"
@@ -519,29 +521,6 @@ func InsertRewardRecord(record *types.BpRewardRecord) error {
 	return db.Create(record).Error
 }
 
-//
-// get total generated block number of bp 
-//
-func CalcBpGeneratedBlockNum(bpName string, sTime int64, endTime int64) (uint64,error) {
-	logger := logs.GetLogger()
-	db,err := getCosObserveNodeDb()
-	if err != nil {
-		logger.Errorf("CalcBpGeneratedBlockNum: fail to get observe node db, the error is %v", db)
-		return 0, err
-	}
-	var (
-		blockLog []*iservices.BlockLogRecord
-		totalCount uint64
-	)
-	sStamp := utils.ConvertTimeToStamp(time.Unix(sTime, 0))
-	endStamp := utils.ConvertTimeToStamp(time.Unix(endTime, 0))
-	err = db.Where("block_producer=? AND block_time > ? AND block_time <= ?", bpName, sStamp, endStamp).Find(&blockLog).Count(&totalCount).Error
-	if err != nil {
-		logger.Errorf("CalcBpGeneratedBlockNum: fail to get total generated block of %v, the error is %b", bpName, err)
-		return 0, err
-	}
-	return totalCount, nil
-}
 
 func getDbFilterCondition(officialBpList []string, column string) string {
 	filter := ""
@@ -645,7 +624,7 @@ func GetVoterMinVestOfPeriod(usrName string, sTime int64, endTime int64) (uint64
 //
 // get all voters which can get reward
 //
-func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64) ([]*types.AccountInfo, error){
+func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64, sBlkNum uint64, eBlkNum uint64) ([]*types.AccountInfo, error){
 	logger := logs.GetLogger()
 	db,err := getServiceDB()
 	if err != nil {
@@ -654,12 +633,14 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64)
 	}
 	var infoList []*types.AccountInfo
 
-	sStamp := utils.ConvertTimeToStamp(time.Unix(sTime, 0))
-	endStamp := utils.ConvertTimeToStamp(time.Unix(endTime, 0))
-	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_time > ? AND bp_vote_records.block_time <= ?)) as t1", bpName, sStamp , endStamp).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ?)", sTime, endTime, sTime, endTime).Scan(&infoList).Error
+	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1", bpName, sBlkNum , eBlkNum).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ?)", sTime, endTime, sTime, endTime).Scan(&infoList).Error
 	if err != nil {
-    	logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
-    	return nil, err
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
+			return nil, err
+		}
+		return nil, nil
+
 	}
 	return infoList, nil
 }
@@ -682,4 +663,281 @@ func GetUserRewardHistory(acctName string, pageIndex int, pageSize int) ([]*type
 
 	}
 	return list, nil, types.StatusSuccess
+}
+
+//
+// ger bp's reward history record of one period
+//
+func GetBpRewardHistoryByPeriod(period uint64, bpName string)  (*types.BpRewardRecord, error) {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("GetBpRewardHistoryByPeriod: fail to get db,the error is %v", err)
+		return nil, errors.New("fail to get db service")
+	}
+	var rec types.BpRewardRecord
+	err = db.Where("period = ? AND bp = ? AND reward_type = ?", period, bpName, types.RewardTypeToBp).First(&rec).Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("GetBpRewardHistoryByPeriod: fail to get record history, the error is %v", err)
+			return nil, errors.New("fail to get record")
+		}
+		return nil,nil
+	}
+	return &rec,nil
+}
+
+//
+// get all bp's reward history of one period
+//
+func GetAllBpRewardHistoryByPeriod(period uint64) ([]*types.BpRewardRecord, error) {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("GetAllBpRewardHistoryByPeriod: fail to get db,the error is %v", err)
+		return nil, errors.New("fail to get db service")
+	}
+	var list []*types.BpRewardRecord
+	err = db.Where("period = ? AND reward_type = ?", period, types.RewardTypeToBp).Find(&list).Order("block_producer").Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("GetAllBpRewardHistoryByPeriod: fail to get record history, the error is %v", err)
+			return nil, errors.New("fail to get record")
+		}
+		return nil,nil
+	}
+	return list,nil
+}
+
+
+//
+// get the lib number
+//
+func GetLib() (uint64, error) {
+	logger := logs.GetLogger()
+	db,err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("GetLib: fail to get cos observe node db,the errors is %v", err)
+		return 0, err
+	}
+	var (
+		libInfo types.LibInfo
+	)
+
+	err = db.Table("libinfo").Find(&libInfo).Error
+	if err != nil {
+		logger.Errorf("GetLib: fail to get lib, the error is %v", err)
+		return 0,err
+	}
+	return libInfo.Lib,nil
+}
+
+//func CreateBlockLog(log *iservices.BlockLogRecord) error {
+//	db,err := getCosObserveNodeDb()
+//	if err != nil {
+//		fmt.Printf("CreateBlockLog: fail to get cos observe db, the error is %v \n", err)
+//		return  err
+//	}
+//	tName := log.TableName()
+//	if !db.HasTable(tName) {
+//		err = db.CreateTable(log).Error
+//		if err != nil {
+//			return  err
+//		}
+//	}
+//	return db.FirstOrCreate(log).Error
+//}
+
+//
+// get block log by block number
+//
+func GetBlockLogByNum(blkNum uint64) (*iservices.BlockLogRecord, error) {
+	logger := logs.GetLogger()
+	db,err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("GetBlockInfoByNum: fail to get cos observe node db,the errors is %v", err)
+		return nil, err
+	}
+	var rec iservices.BlockLogRecord
+	tabName := iservices.BlockLogTableNameForBlockHeight(blkNum)
+	err = db.Table(tabName).Where("block_height = ? AND final = ?", blkNum, 1).Find(&rec).Error
+	if err != nil {
+		logger.Errorf("GetBlockInfoByNum: fail to block record of block:%v, the error is %v", blkNum, err)
+		return nil,err
+	}
+	return &rec,nil
+}
+
+//
+// calculate total generated block number of bp during a period
+//
+func CalcBpTotalBlockNumOfRange(bp string, start uint64, end uint64) (uint64, error) {
+	logger := logs.GetLogger()
+	db, err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("GetBlockLogById: fail to get cos observe db, the error is %v \n", err)
+		return 0,err
+	}
+	sTabName := iservices.BlockLogTableNameForBlockHeight(start)
+	eTabName := iservices.BlockLogTableNameForBlockHeight(end)
+	var (
+		total uint64
+	)
+
+	err = db.Table(sTabName).Where("block_producer = ? AND block_height > ? AND block_height <= ? AND final = ?", bp, start, end, 1).Count(&total).Error
+    if err != nil {
+    	return 0, err
+	}
+	if sTabName != eTabName {
+		//all record not in one  db table, calculate total number in another table
+		var left uint64
+		err = db.Table(eTabName).Where("block_producer = ? AND block_height > ? AND block_height <= ? AND final=?", bp, start, end, 1).Count(&left).Error
+		if err != nil {
+			return 0,err
+		}
+		total += left
+	}
+	return total,nil
+}
+
+//
+// get latest reward period in db
+//
+func GetLatestDistributedPeriod(isMax bool) (uint64, error) {
+	logger := logs.GetLogger()
+	db, err := getServiceDB()
+	if err != nil {
+		logger.Errorf("GetLatestDistributedPeriod: fail to get cos observe db, the error is %v ", err)
+		return 0,err
+	}
+    //var rewardRec types.BpRewardRecord
+	var (
+		period uint64
+		total int
+	)
+
+	err = db.Model(types.BpRewardRecord{}).Select("count(*)").Row().Scan(&total)
+	if err != nil {
+		logger.Errorf("GetLatestDistributedPeriod: fail to check table is empty", err)
+		return 0, err
+	} else {
+		if total == 0 {
+			//table is empty
+			return 0, nil
+		}
+	}
+	filter := "max(period)"
+	if !isMax {
+		filter = "min(period)"
+	}
+	err = db.Model(types.BpRewardRecord{}).Select(filter).Row().Scan(&period)
+	if err != nil {
+		if err != sql.ErrNoRows {
+			logger.Errorf("GetLatestDistributedPeriod: fail to get latest distributed period, the error is %v", err)
+			return 0,err
+		} else {
+			logger.Error("GetLatestDistributedPeriod: fail to find latest distributed period")
+			return 0, nil
+		}
+	}
+	return period,nil
+}
+
+//
+// get total number of blocks generated by every bp of a distribute period
+//
+func CalcBpGeneratedBlocksOnOnePeriod(start uint64, end uint64) ([]*types.BpBlockStatistics, error) {
+	logger := logs.GetLogger()
+	db, err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("CalcBpGeneratedBlocksOnOnePeriod: fail to get cos observe db, the error is %v \n", err)
+		return nil,err
+	}
+	sTabName := iservices.BlockLogTableNameForBlockHeight(start)
+	eTabName := iservices.BlockLogTableNameForBlockHeight(end)
+	var list []*types.BpBlockStatistics
+	sql := fmt.Sprintf("select count(*) as total_count, block_producer from %v where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, start, end, 1)
+	if sTabName != eTabName {
+		// need select union two table
+		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select * from %v union all (select * from %v)) as t where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, eTabName, start, end, 1)
+	}
+	err = db.Raw(sql).Scan(&list).Error
+	if err != nil {
+		logger.Errorf("CalcBpGeneratedBlocksOnOnePeriod: fail to get bp's block statistics info, the error is %v", err)
+		return nil, err
+	}
+	return list,nil
+}
+
+//
+// calculate total voters number on cos chain
+//
+func CalcTotalVotersNumber() (uint64, error) {
+	logger := logs.GetLogger()
+	db, err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("CalcTotalVotersNumber: fail to get cos observe db, the error is %v", err)
+		return 0,err
+	}
+	var total uint64
+	err = db.Model(&plugins.ProducerVoteState{}).Count(&total).Error
+	if err != nil {
+		logger.Errorf("CalcTotalVotersNumber: fail to calculate total voters count, the error is %v", err)
+		return 0,err
+	}
+	return total,nil
+}
+
+//
+// calculate total block producer on cos chain
+//
+func CalcTotalBpNumber() (uint64, error) {
+	logger := logs.GetLogger()
+	db, err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("CalcTotalBpNumber: fail to get cos observe db, the error is %v", err)
+		return 0,err
+	}
+	var total uint64
+	err = db.Model(&plugins.ProducerVoteState{}).Select("COUNT(DISTINCT(producer))").Row().Scan(&total)
+	if err != nil {
+		logger.Errorf("CalcTotalBpNumber: fail to calculate total voters count, the error is %v", err)
+		return 0,err
+	}
+	return total,nil
+}
+
+//
+// get max RIO
+//
+func GetMaxROIOfBpReward() (float64,error) {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("GetMaxROIOfBpReward: fail to get db,the error is %v", err)
+		return 0,err
+	}
+	var (
+		maxROI float64
+		total int
+	)
+	err = db.Model(types.BpRewardRecord{}).Select("count(*)").Row().Scan(&total)
+	if err != nil {
+		logger.Errorf("GetLatestDistributedPeriod: fail to check table is empty", err)
+		return 0, err
+	} else {
+		if total == 0 {
+			//table is empty
+			return 0, nil
+		}
+	}
+	err = db.Model(types.BpRewardRecord{}).Select("MAX(annualized_rate)").Where("reward_type = ?", types.RewardTypeToBp).Row().Scan(&maxROI)
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("GetMaxROIOfBpReward: fail to get max ROI of bp reward, the error is %v", err)
+			return 0,err
+		}
+		return 0,nil
+	}
+	return maxROI,nil
 }

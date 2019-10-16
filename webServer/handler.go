@@ -2,6 +2,7 @@ package webServer
 
 import (
 	"bp_official_reward/db"
+	"bp_official_reward/distribute"
 	"bp_official_reward/logs"
 	"bp_official_reward/types"
 	"bp_official_reward/utils"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 )
 
@@ -17,7 +19,9 @@ const (
 	pageSizeKey = "pageSize"
 	pageIndexKey = "index"
 	accountNameKey = "account"
+	paramPeriodKey = "period"
 
+	defaultPeriodNum = 4  // default get reward history of the last 4 period
 )
 
 //
@@ -83,6 +87,8 @@ func getUserRewardHistory(w http.ResponseWriter, r *http.Request)  {
 				Bp: reward.Bp,
 				Amount: reward.Amount,
 				Time: strconv.FormatInt(reward.Time, 10),
+				Period: strconv.FormatUint(reward.Period, 10),
+				BlockNumber: strconv.FormatUint(reward.DistributeBlockNumber, 10),
 			}
 			rewardList = append(rewardList, history)
 		}
@@ -95,7 +101,85 @@ func getUserRewardHistory(w http.ResponseWriter, r *http.Request)  {
 	writeResponse(w, res)
 }
 
+//
+// get past bp reward records
+//
+func getBpRewardHistory(w http.ResponseWriter, r *http.Request)  {
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	res := &types.RewardInfoResponse{
+		List: make([]*types.RewardInfo, 0),
+	}
+	res.Msg = ""
+    //get param period
+    period := defaultPeriodNum
+	periodStr,err,_ := parseParameterFromRequest(r, paramPeriodKey)
+	if err == nil {
+		p,err := strconv.Atoi(periodStr)
+		if err != nil {
+			res.Status = types.StatusParamParseError
+			writeResponse(w, res)
+			return
+		}
+		period = p
+	}
+	list,err,code := distribute.GetBpRewardHistory(period)
+	if err != nil {
+		res.Status = code
+		res.Msg = err.Error()
+	} else {
+		res.Status = types.StatusSuccess
+		if list == nil {
+			list = make([]*types.RewardInfo, 0)
+		}
+		res.List = list
+	}
+	writeResponse(w, res)
+}
 
+//
+// estimate bp reward of next period
+//
+func estimateBpRewardOnNextPeriod(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+	res := &types.EstimatedRewardInfoResponse{
+		List: make([]*types.EstimatedRewardInfo, 0),
+	}
+	res.Msg = ""
+	list,err,code := distribute.EstimateCurrentPeriodReward()
+	if err != nil {
+		res.Status = code
+		res.Msg = err.Error()
+	} else {
+		res.Status = types.StatusSuccess
+		if list == nil {
+			list = make([]*types.EstimatedRewardInfo, 0)
+		}
+		res.List = list
+	}
+	sort.Sort(res)
+	writeResponse(w, res)
+	
+}
+
+//
+// get historical vote info(include total voter number and max ROI)
+//
+func getHistoricalVoteInfo(w http.ResponseWriter, r *http.Request) {
+	w.Header().Add("Access-Control-Allow-Origin", "*")
+    res := &types.HistoricalVotingDataResponse{
+    	Info: &types.HistoricalVotingData{},
+	}
+    res.Msg = ""
+    info,err,code := distribute.GetHistoricalVotingData()
+	if err != nil {
+		res.Status = code
+		res.Msg = err.Error()
+	} else {
+		res.Info = info
+		res.Status = types.StatusSuccess
+	}
+	writeResponse(w, res)
+}
 
 func writeResponse(w http.ResponseWriter, data interface{}) {
 	js, err := json.Marshal(data)
@@ -119,7 +203,7 @@ func parseParameterFromRequest(r *http.Request, parameter string) (string,error,
 	)
 
 	if r == nil {
-		return "", errors.New("empty http request"), http.StatusInternalServerError
+		return "", errors.New("empty http request"), types.StatusParamParseError
 	}
 	reqMethod := r.Method
 	//just handle POST and Get Method
@@ -129,7 +213,7 @@ func parseParameterFromRequest(r *http.Request, parameter string) (string,error,
 			if err == nil && len(queryForm[parameter]) > 0  && utils.CheckIsNotEmptyStr(queryForm[parameter][0]){
 				return queryForm[parameter][0], err, http.StatusOK
 			} else {
-				return "", errors.New(fmt.Sprintf("lack parameter %v", parameter)), types.StatusParamParseError
+				return "", errors.New(fmt.Sprintf("lack parameter %v", parameter)), types.StatusLackParamError
 			}
 		} else {
 			err = r.ParseForm()
@@ -138,7 +222,7 @@ func parseParameterFromRequest(r *http.Request, parameter string) (string,error,
 			}
 			val := r.PostFormValue(parameter)
 			if len(val) < 1 {
-				return "", errors.New(fmt.Sprintf("lack parameter %v", parameter)), types.StatusParamParseError
+				return "", errors.New(fmt.Sprintf("lack parameter %v", parameter)), types.StatusLackParamError
 			}
 			return val, nil, http.StatusOK
 		}
