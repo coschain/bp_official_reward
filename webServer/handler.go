@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strconv"
 )
 
@@ -86,7 +85,7 @@ func getUserRewardHistory(w http.ResponseWriter, r *http.Request)  {
 			history := &types.UserRewardHistory{
 				Voter: reward.Voter,
 				Bp: reward.Bp,
-				Amount: reward.Amount,
+				Amount: reward.RewardAmount,
 				Time: strconv.FormatInt(reward.Time, 10),
 				Period: strconv.FormatUint(reward.Period, 10),
 				BlockNumber: strconv.FormatUint(reward.DistributeBlockNumber, 10),
@@ -145,21 +144,17 @@ func getBpRewardHistory(w http.ResponseWriter, r *http.Request)  {
 func estimateBpRewardOnNextPeriod(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Access-Control-Allow-Origin", "*")
 	res := &types.EstimatedRewardInfoResponse{
-		List: make([]*types.EstimatedRewardInfo, 0),
+		Info: &types.EstimatedRewardInfoModel{},
 	}
 	res.Msg = ""
-	list,err,code := distribute.EstimateCurrentPeriodReward()
+	info,err,code := distribute.EstimateCurrentPeriodReward()
 	if err != nil {
 		res.Status = code
 		res.Msg = err.Error()
 	} else {
 		res.Status = types.StatusSuccess
-		if list == nil {
-			list = make([]*types.EstimatedRewardInfo, 0)
-		}
-		res.List = list
+		res.Info = info
 	}
-	sort.Sort(res)
 	writeResponse(w, res)
 	
 }

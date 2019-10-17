@@ -45,8 +45,9 @@ type BpRewardRecord struct {
 	Id  string  `gorm:primary_key`
 	Period uint64
 	RewardType int  `gorm:"not null"`
-	Amount string  `gorm:"not null"`
+	RewardAmount string  `gorm:"not null"`
 	RewardRate float64 `gorm:"not null"`
+	ColdStartRewardRate float64 `gorm:"not null"`
 	Bp     string `gorm:"not null"`
 	Voter  string `gorm:"not null"`
 	TransferHash string `gorm:"not null"`
@@ -55,11 +56,11 @@ type BpRewardRecord struct {
 	Vest   string    `gorm:"not null"`
 	TotalBlockReward string `gorm:"not null"`
 	SingleBlockReward string `gorm:"not null"`
+	SingleColdStartReward   string  `gorm:"not null"`
 	TotalVoterVest   string  `gorm:"not null"`
 	CreatedBlockNumber uint64 `gorm:"not null"`
 	DistributeBlockNumber  uint64 `gorm:"not null"`
 	AnnualizedRate  float64  `gorm:"not null"`
-
 }
 
 type CosTrxInfo struct {

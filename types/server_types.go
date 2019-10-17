@@ -89,9 +89,16 @@ type EstimatedRewardInfo struct {
 
 }
 
+type EstimatedRewardInfoModel struct {
+	StartBlockNumber string  //start block number of a period
+	EndBlockNumber string    //end block number of a period
+	DistributeTime string    // distribute time of this period
+	List   []*EstimatedRewardInfo
+}
+
 type EstimatedRewardInfoResponse struct {
 	BaseResponse
-	List      []*EstimatedRewardInfo
+	Info      *EstimatedRewardInfoModel
 }
 
 type EstimatedVoterRewardResponse struct {
@@ -128,14 +135,14 @@ func (info *RewardInfo) Swap(i, j int) {
     info.List[i], info.List[j] = info.List[j], info.List[i]
 }
 
-func (r *EstimatedRewardInfoResponse) Len() int {
+func (r *EstimatedRewardInfoModel) Len() int {
 	return len(r.List)
 }
 
-func (r *EstimatedRewardInfoResponse) Less(i, j int) bool {
+func (r *EstimatedRewardInfoModel) Less(i, j int) bool {
 	return  r.List[i].EstimatedAnnualizedROI > r.List[j].EstimatedAnnualizedROI
 }
 
-func (r *EstimatedRewardInfoResponse) Swap(i, j int)  {
+func (r *EstimatedRewardInfoModel) Swap(i, j int)  {
 	 r.List[i], r.List[j] = r.List[j], r.List[i]
 }
