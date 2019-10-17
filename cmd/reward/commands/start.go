@@ -32,7 +32,7 @@ var StartCmd = func() *cobra.Command {
 }
 
 func startService(cmd *cobra.Command, args []string)  {
-	fmt.Println("start swap service")
+	fmt.Println("start bp reward service")
 
 	err := config.SetConfigEnv(svEnv)
 	if err != nil {

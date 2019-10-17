@@ -633,7 +633,7 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 	}
 	var infoList []*types.AccountInfo
 
-	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1", bpName, sBlkNum , eBlkNum).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ?)", sTime, endTime, sTime, endTime).Scan(&infoList).Error
+	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > ? AND time <= ? AND bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1", sTime, endTime,bpName, sBlkNum , eBlkNum).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ?)", sTime, endTime, sTime, endTime).Scan(&infoList).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)

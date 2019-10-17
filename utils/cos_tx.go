@@ -78,7 +78,7 @@ func genTransferToVestSignedTx(from string, privKey string, to string, iAmount *
 		return nil, errors.New(desc)
 	}
 	transferAmount := iAmount.Uint64()
-	logger.Infof("GenerateCosTransferSignedTx: transfer cos amount is %v", transferAmount)
+	logger.Infof("GenerateCosTransferSignedTx: transfer vest to %v's amount is %v ", to, transferAmount)
 	op := &prototype.TransferToVestOperation{
 		From:   &prototype.AccountName{Value: from},
 		To:     &prototype.AccountName{Value: to},
