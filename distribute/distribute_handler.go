@@ -56,6 +56,9 @@ var (
 		4: 21900000,
 		5: 19650000,
 	}
+
+	cacheSv  *cacheService
+
 )
 
 type RewardDistributeService struct {
@@ -68,6 +71,71 @@ type RewardDistributeService struct {
 type bpRewardInfo struct {
 	rewardRecord *types.BpRewardRecord
 	VoterList []*types.AccountInfo
+}
+
+type cacheService struct {
+	estimateRewardInfo *types.EstimatedRewardInfoModel
+	stopCh     chan bool
+	logger  *logrus.Logger
+	isEstimating bool
+}
+
+func CacheServiceInstance() *cacheService {
+	svOnce.Do(func() {
+		if cacheSv == nil {
+			cacheSv = &cacheService{
+				logger: logs.GetLogger(),
+			}
+		}
+	})
+	return cacheSv
+}
+
+func (c *cacheService) StartCacheSerVice() {
+	ticker := time.NewTicker(time.Duration(config.CacheTimeInterval))
+	go func() {
+		for {
+			select {
+			case <- ticker.C:
+				c.cacheEstimatedRewardInfo()
+			case <- c.stopCh:
+				ticker.Stop()
+				return
+			}
+		}
+	}()
+}
+
+func (c *cacheService) StopCacheSerVice() {
+	c.stopCh <- true
+	close(sv.stopCh)
+}
+
+func (c *cacheService) cacheEstimatedRewardInfo()  {
+	c.logger.Infoln("start this round cacheEstimatedRewardInfo")
+	if c.isEstimating {
+		c.logger.Infoln("last round estimate is not finish")
+		return
+	}
+
+	c.isEstimating = true
+	info,err,_ := estimateCurrentPeriodReward()
+	if err != nil {
+		c.logger.Errorf("Fail to estimate reward info, the error is %v", err)
+	}
+	c.estimateRewardInfo = info
+	c.isEstimating = false
+}
+
+func (c *cacheService) GetEstimatedRewardInfo() *types.EstimatedRewardInfoModel {
+	return c.estimateRewardInfo
+}
+
+func (c *cacheService) SetEstimatedRewardInfo(info *types.EstimatedRewardInfoModel) {
+	if info != nil {
+		c.estimateRewardInfo = info
+	}
+
 }
 
 func NewDistributeService() *RewardDistributeService {
@@ -85,10 +153,12 @@ func (sv* RewardDistributeService)StartDistributeService() error {
 				sv.handleDistribute()
 			case <- sv.stopCh:
 				ticker.Stop()
+				CacheServiceInstance().StopCacheSerVice()
 				return
 			}
 		}
 	}()
+	CacheServiceInstance().StartCacheSerVice()
 	return nil
 }
 
@@ -229,10 +299,9 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 			} else {
 				//calculate all voter's total vest
 				totalVest = getTotalVestOfVoters(voterList)
-				sv.logger.Infof("startDistribute: total vest of all voters of bp:%v is %v", bp, totalVest.String())
 			}
 		}
-		sv.logger.Infof("startDistribute: this round voters number of bp:%v is %v", bp, len(voterList))
+		sv.logger.Infof("startDistribute: this round voters number of bp:%v is %v, total vest of all voters is %v", bp, len(voterList), totalVest.String())
 
 		if isBlkCntValid {
 				sv.logger.Infof("startDistribute: generated block of bp:%v is %v", bp, generatedBlkNum)
@@ -250,7 +319,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 					transferReward := new(big.Int)
 					transferReward.SetString(distributeReward.String(), 10)
 					distributeReward,_ = distributeReward.QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
-					sv.logger.Infof("startDistribute: calculate voter:%v's reward is %v, actually reward is %v", acct.Name, distributeReward, transferReward)
+					sv.logger.Infof("startDistribute: calculate voter:%v's reward is %v, actually reward is %v, vest is %v", acct.Name, distributeReward, transferReward, utils.CalcActualVest(acct.Vest))
 
 					//create reward record
 					rewardRec := &types.BpRewardRecord{
@@ -309,6 +378,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 			//we just distribute cold start reward for bp,because Ecological Reward distributed by cos chain
 			distributeReward := calcTotalRewardOfBpOnOnePeriod(singleBlkColdStartReward, data.TotalCount)
 			distributeRewardStr := distributeReward.String()
+			sv.logger.Infof("startDistributeToBp: actual distribute reward to bp:%v is %v", data.BlockProducer, distributeRewardStr)
 			// Multiply COSTokenDecimals
 			distributeReward = distributeReward.Mul(decimal.NewFromFloat(constants.COSTokenDecimals))
 			bigAmount := new(big.Int)
@@ -608,6 +678,18 @@ func GetBpRewardHistory(period int) ([]*types.RewardInfo, error, int) {
 }
 
 func EstimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int) {
+	info := CacheServiceInstance().GetEstimatedRewardInfo()
+	if info != nil {
+		return info, nil, types.StatusSuccess
+	}
+	info,err,code := estimateCurrentPeriodReward()
+	if err == nil {
+		CacheServiceInstance().SetEstimatedRewardInfo(info)
+	}
+	return info,err,code
+}
+
+func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int) {
 	logger := logs.GetLogger()
 	curTime := time.Now().Unix()
 	logger.Infof("EstimateCurrentPeriodReward: estimate current period reward on time: %v", curTime)
@@ -616,6 +698,7 @@ func EstimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get latest lib on time %v, the error is %v", curTime, err)
 		return nil, errors.New("fail to get latest lib"), types.StatusGetLibError
 	}
+
 	latestPeriod,err := db.GetLatestDistributedPeriod(true)
 	if err != nil {
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get latest distribute period on time %v, the error is %v", curTime, err)
@@ -633,7 +716,7 @@ func EstimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		eBlkNum = sBlkNum + config.DistributeInterval
 		diffBlk = config.DistributeInterval
 	}
-  
+
 	logger.Infof("EstimateCurrentPeriodReward: estimate bp reward of next period %v , start block number is %v, end block number is %v, diff block number is %v", nextPeriod, sBlkNum, eBlkNum, eBlkNum-sBlkNum)
 	blkSta,err := db.CalcBpGeneratedBlocksOnOnePeriod(sBlkNum, eBlkNum)
 	if err != nil {
@@ -670,7 +753,7 @@ func EstimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		info.AccumulatedReward = totalAmount.String()
 		logger.Infof("EstimateCurrentPeriodReward: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
 		voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sTime, curTime, sBlkNum, eBlkNum)
-        if err != nil {
+		if err != nil {
 			logger.Errorf("EstimateCurrentPeriodReward: Fail to get all voters who can get reward from bp:%v, the error is %v", data.BlockProducer, err)
 			return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
 		}
@@ -704,6 +787,7 @@ func EstimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	sort.Sort(rewardInfo)
 	return rewardInfo, nil, types.StatusSuccess
 }
+
 
 func GetHistoricalVotingData() (*types.HistoricalVotingData, error, int) {
 	//1. get total voters count

@@ -45,6 +45,7 @@ type EnvConfig struct {
 	DistributeInterval string `json:"distributeInterval"`
 	DistributeTimeInterval string `json:"distributeTimeInterval"`
 	ServiceStarPeriodBlockNum string `json:"serviceStarPeriodBlockNum"`
+	CacheTimeInterval  string `json:"cacheTimeInterval"`
 }
 
 type RewardConfig struct {
@@ -72,6 +73,7 @@ var (
 	DistributeTimeInterval int64
 	DistributeInterval uint64
 	SnapshotTimeInterval int64
+	CacheTimeInterval int64
 	OfficialBpList []string
 )
 
@@ -116,6 +118,10 @@ func LoadRewardConfig() error {
 			ServiceStarPeriodBlockNum,err = strconv.ParseUint(rewardConfig.ServiceStarPeriodBlockNum, 10, 64)
 			if err != nil {
 				return errors.New(fmt.Sprintf("fail to convert ServiceStarPeriodBlockNum:%v to int64, the error is %v", rewardConfig.ServiceStarPeriodBlockNum, err))
+			}
+			CacheTimeInterval,err = strconv.ParseInt(rewardConfig.CacheTimeInterval, 10, 64)
+			if err != nil {
+				return errors.New(fmt.Sprintf("fail to convert CacheTimeInterval:%v to int64, the error is %v", rewardConfig.ServiceStarPeriodBlockNum, err))
 			}
 			OfficialBpList = rewardConfig.RewardBpList
 		}
