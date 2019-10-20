@@ -18,8 +18,8 @@ const (
 	getBpEstimateRewardUrl  = "/api/getBpEstimateReward"
 	getHistoricalVoteInfoUrl = "/api/getHistoricalVoteInfo"
 
-	writeTimeOut = 2
-	readTimeOut  = 2
+	writeTimeOut = 3
+	readTimeOut  = 3
 )
 
 var (

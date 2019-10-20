@@ -870,6 +870,25 @@ func CalcBpGeneratedBlocksOnOnePeriod(start uint64, end uint64) ([]*types.BpBloc
 }
 
 //
+// get all bp from chain 
+//
+func GetAllBpFromChain() ([]*plugins.ProducerVoteState,error) {
+	logger := logs.GetLogger()
+	db, err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("CalcBpGeneratedBlocksOnOnePeriod: fail to get cos observe db, the error is %v \n", err)
+		return nil,err
+	}
+	var list []*plugins.ProducerVoteState
+	err = db.Model(plugins.ProducerVoteState{}).Select("DISTINCT producer").Scan(&list).Error
+	if err != nil {
+		logger.Errorf("GetAllBpFromChain: fail to get all bp, the error is %v", err)
+		return nil, err
+	}
+	return list, nil
+}
+
+//
 // calculate total voters number on cos chain
 //
 func CalcTotalVotersNumber() (uint64, error) {

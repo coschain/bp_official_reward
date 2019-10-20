@@ -8,6 +8,7 @@ import (
 	"bp_official_reward/utils"
 	"errors"
 	"fmt"
+	"github.com/coschain/contentos-go/app/plugins"
 	"github.com/coschain/contentos-go/common/constants"
 	"github.com/coschain/contentos-go/prototype"
 	"github.com/robfig/cron"
@@ -718,6 +719,12 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	}
 
 	logger.Infof("EstimateCurrentPeriodReward: estimate bp reward of next period %v , start block number is %v, end block number is %v, diff block number is %v", nextPeriod, sBlkNum, eBlkNum, eBlkNum-sBlkNum)
+    // get all bp on chain
+	allBpList,err := db.GetAllBpFromChain()
+	if err != nil {
+		logger.Errorf("EstimateCurrentPeriodReward: fail to get all bp, the error is %v", err)
+	}
+
 	blkSta,err := db.CalcBpGeneratedBlocksOnOnePeriod(sBlkNum, eBlkNum)
 	if err != nil {
 		logger.Errorf("EstimateCurrentPeriodReward: fail to calculate bp's generated block on time %v, the error is %v", curTime, err)
@@ -742,6 +749,11 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		EndBlockNumber: strconv.FormatUint(sBlkNum+config.DistributeInterval, 10),
 		DistributeTime: strconv.FormatInt(estimateEndBlkTime, 10),
 		List: make([]*types.EstimatedRewardInfo, 0),
+	}
+
+	notGenBlkBpList := filterNotGeneratedBlockBp(allBpList, blkSta)
+	if len(notGenBlkBpList) > 0 {
+		blkSta = append(blkSta, notGenBlkBpList...)
 	}
 	for _,data := range blkSta {
 		info := &types.EstimatedRewardInfo{
@@ -782,12 +794,34 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		}
 
 		list = append(list, info)
+
 	}
+
 	rewardInfo.List = list
 	sort.Sort(rewardInfo)
 	return rewardInfo, nil, types.StatusSuccess
 }
 
+func filterNotGeneratedBlockBp(allBpList []*plugins.ProducerVoteState, genList []*types.BpBlockStatistics) ([]*types.BpBlockStatistics){
+	var list []*types.BpBlockStatistics
+	for _,voteState := range allBpList {
+		isContain := false
+		for _,blkStatistics := range genList {
+			if voteState.Producer == blkStatistics.BlockProducer {
+				isContain = true
+				break
+			}
+		}
+		if !isContain {
+			info := &types.BpBlockStatistics{
+				TotalCount: 0,
+				BlockProducer: voteState.Producer,
+			}
+			list = append(list, info)
+		}
+	}
+	return list
+}
 
 func GetHistoricalVotingData() (*types.HistoricalVotingData, error, int) {
 	//1. get total voters count
