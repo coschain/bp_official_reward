@@ -127,6 +127,7 @@ func (c *cacheService) cacheEstimatedRewardInfo()  {
 	}
 	c.estimateRewardInfo = info
 	c.isEstimating = false
+	c.logger.Infoln("finish this round cacheEstimatedRewardInfo")
 }
 
 func (c *cacheService) GetEstimatedRewardInfo() *types.EstimatedRewardInfoModel {
@@ -754,6 +755,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		StartBlockNumber: strconv.FormatUint(sBlkNum, 10),
 		EndBlockNumber: strconv.FormatUint(sBlkNum+config.DistributeInterval, 10),
 		DistributeTime: strconv.FormatInt(estimateEndBlkTime, 10),
+		UpdateTime: strconv.FormatInt(curTime, 10),
 		List: make([]*types.EstimatedRewardInfo, 0),
 	}
 

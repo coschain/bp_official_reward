@@ -93,6 +93,7 @@ type EstimatedRewardInfoModel struct {
 	StartBlockNumber string  //start block number of a period
 	EndBlockNumber string    //end block number of a period
 	DistributeTime string    // distribute time of this period
+	UpdateTime  string      // estimated reward info update time
 	List   []*EstimatedRewardInfo
 }
 
