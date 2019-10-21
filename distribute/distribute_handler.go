@@ -30,6 +30,7 @@ const (
 	//Ecological reward
 	EcologicalRewardMaxYear = 12
 	YearBlkNum = YearDay * 86400
+	MinVoterDistributeVest uint64 = 10 * constants.COSTokenDecimals  // the min vest that the voter can receive the reward is 100
 )
 
 var (
@@ -343,7 +344,12 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 						DistributeBlockNumber: endBlk,
 						AnnualizedRate: calcAnnualizedROI(generatedBlkNum, *coldStartSingleReward, RewardRate, totalVest.String()),
 					}
-					sv.sendRewardToAccount(rewardRec, transferReward)
+					rewardable := true
+					if bigVal.Uint64() < MinVoterDistributeVest {
+						//if voter's vest is less than 10 vest, not need to distribute reward to it
+						rewardable = false
+					}
+					sv.sendRewardToAccount(rewardRec, transferReward, rewardable)
 				}
 		}
 
@@ -421,7 +427,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 				VoterList: voterList,
 			}
 			list = append(list, bpInfo)
-			err = sv.sendRewardToAccount(rec, bigAmount)
+			err = sv.sendRewardToAccount(rec, bigAmount, true)
 			if err != nil {
 				sv.logger.Errorf("startDistributeToBp: fail to send reward to bp:%v, the error is %v , the rec is %+v", data.BlockProducer, err, rec)
 			}
@@ -452,7 +458,7 @@ func (sv *RewardDistributeService) getPeriodRangeBlockTime(start uint64, end uin
 	return sBlkLog.BlockTime, eBlkLog.BlockTime, nil
 }
 
-func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpRewardRecord, rewardAmount *big.Int) error {
+func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpRewardRecord, rewardAmount *big.Int, rewardable bool) error {
 	if rewardRec == nil {
 		sv.logger.Errorf("sendRewardToAccount: fail to send reward with empty BpRewardRecord")
 		return errors.New("can't send reward with empty BpRewardRecord")
@@ -463,8 +469,8 @@ func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpReward
 		txHash string
 		isTransfer  = true
 	)
-	if rewardAmount.Uint64() == 0 {
-		//amount is 0, not needed to transfer
+	if rewardAmount.Uint64() == 0 || !rewardable {
+		//amount is 0 or voters's vest is less than MinVoterDistributeVest, not needed to transfer
 		sv.logger.Infof("sendRewardToAccount: transfer vest amount to %v is 0", rewardRec.Voter)
 		rewardRec.Status = types.ProcessingStatusNotNeedTransfer
 		isTransfer  = false

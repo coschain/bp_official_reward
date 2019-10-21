@@ -46,13 +46,18 @@ func (s *BpSyncService) StopSyncService()  {
 func (s *BpSyncService) snapshot() {
 	curTime := time.Now()
 	s.logger.Infof("Start snapshot: the timestamp is %v", curTime.Unix())
-	d,year := distribute.GetSingleBlockRewardOfColdStart(curTime)
-	if d == nil {
+
+	lib,err := db.GetLib()
+	if err != nil {
+		s.logger.Errorf("snapshot: fail to get latest lib on time %v, the error is %v", curTime.Unix(), err)
+		return
+	}
+	year := lib / (distribute.YearBlkNum) + 1
+	if year > distribute.ColdStartRewardMaxYear {
 		//after 5 year, not need to snapshot
 		s.logger.Infof("snapshot: not need to snapshot on time:%v, on year %v", curTime, year)
 		return
 	}
-
 
 	//1. get official bp vote record
 	recList,err := db.GetBpVoteRecords(curTime, config.OfficialBpList)

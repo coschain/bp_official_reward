@@ -698,7 +698,7 @@ func GetAllBpRewardHistoryByPeriod(period uint64) ([]*types.BpRewardRecord, erro
 		return nil, errors.New("fail to get db service")
 	}
 	var list []*types.BpRewardRecord
-	err = db.Where("period = ? AND reward_type = ?", period, types.RewardTypeToBp).Find(&list).Order("block_producer").Error
+	err = db.Where("period = ? AND reward_type = ?", period, types.RewardTypeToBp).Order("annualized_rate desc").Find(&list).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetAllBpRewardHistoryByPeriod: fail to get record history, the error is %v", err)
@@ -709,6 +709,24 @@ func GetAllBpRewardHistoryByPeriod(period uint64) ([]*types.BpRewardRecord, erro
 	return list,nil
 }
 
+func GetAllBpRewardHistoryByPeriodRange(start uint64, end uint64) ([]*types.BpRewardRecord, error) {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("GetAllBpRewardHistoryByPeriodRange: fail to get db,the error is %v", err)
+		return nil, errors.New("fail to get db service")
+	}
+	var list []*types.BpRewardRecord
+	err = db.Where("reward_type = ? AND period >= ? AND period <= ?", types.RewardTypeToBp, start, end).Order("period asc,annualized_rate desc").Find(&list).Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("GetAllBpRewardHistoryByPeriodRange: fail to get record history of period range(start:%v,end:%v), the error is %v", err, start, end)
+			return nil, errors.New("fail to get record")
+		}
+		return nil, nil
+	}
+	return list,nil
+}
 
 //
 // get the lib number
