@@ -805,6 +805,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 
 	rewardInfo.List = list
 	sort.Sort(rewardInfo)
+	logger.Infof("EstimateCurrentPeriodReward: finish estimate current period:%v", curPeriod)
 	return rewardInfo, nil, types.StatusSuccess
 }
 
