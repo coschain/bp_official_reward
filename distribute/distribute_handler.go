@@ -312,9 +312,13 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 				totalReward := calcTotalRewardOfBpOnOnePeriod(*coldStartSingleReward, generatedBlkNum)
 				sv.logger.Infof("startDistribute: total block reward of bp:%v is %v", bp, totalReward.String())
 				//calculate actually distributed rewards (total reward * rate)
-				distributeReward := totalReward.Mul(decimal.NewFromFloat(RewardRate))
+				distributeReward := totalReward
 				sv.logger.Infof("startDistribute: total distribute block reward of bp:%v is %v", bp, distributeReward.String())
 				for _,acct := range voterList {
+					if checkIsValidVoterVest(acct.Vest) {
+						//not distribute reward to voter whose vest is less than MinVoterDistributeVest
+						continue
+					}
 					bigVal := new(big.Int).SetUint64(acct.Vest)
 					vest := decimal.NewFromBigInt(bigVal, 0)
 					actualReward :=  calcActualReward(distributeReward, vest, totalVest)
@@ -345,11 +349,11 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 						DistributeBlockNumber: endBlk,
 						AnnualizedRate: calcAnnualizedROI(generatedBlkNum, *coldStartSingleReward, RewardRate, totalVest.String()),
 					}
-					rewardable := true
-					if bigVal.Uint64() < MinVoterDistributeVest {
-						//if voter's vest is less than 10 vest, not need to distribute reward to it
-						rewardable = false
-					}
+					rewardable := false
+					//if bigVal.Uint64() < MinVoterDistributeVest {
+					//	//if voter's vest is less than 10 vest, not need to distribute reward to it
+					//	rewardable = false
+					//}
 					sv.sendRewardToAccount(rewardRec, transferReward, rewardable)
 				}
 		}
@@ -432,7 +436,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 				VoterList: voterList,
 			}
 			list = append(list, bpInfo)
-			err = sv.sendRewardToAccount(rec, bigAmount, true)
+			err = sv.sendRewardToAccount(rec, bigAmount, false)
 			if err != nil {
 				sv.logger.Errorf("startDistributeToBp: fail to send reward to bp:%v, the error is %v , the rec is %+v", data.BlockProducer, err, rec)
 			}
@@ -476,7 +480,7 @@ func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpReward
 	)
 	if rewardAmount.Uint64() == 0 || !rewardable {
 		//amount is 0 or voters's vest is less than MinVoterDistributeVest, not needed to transfer
-		sv.logger.Infof("sendRewardToAccount: transfer vest amount to %v is 0", rewardRec.Voter)
+		sv.logger.Infof("sendRewardToAccount: not need transfer,transfer vest amount to %v is %v", rewardRec.Voter, rewardAmount.Uint64())
 		rewardRec.Status = types.ProcessingStatusNotNeedTransfer
 		isTransfer  = false
 	} else {
@@ -595,11 +599,20 @@ func GetSingleBlockRewardOfColdStart(t time.Time) (*decimal.Decimal,int64) {
 func getTotalVestOfVoters(list []*types.AccountInfo) decimal.Decimal {
 	total := decimal.New(0, 0)
 	for _,acct := range list {
-		bigVal := new(big.Int).SetUint64(acct.Vest)
-		total = total.Add(decimal.NewFromBigInt(bigVal, 0))
+		if checkIsValidVoterVest(acct.Vest) {
+			bigVal := new(big.Int).SetUint64(acct.Vest)
+			total = total.Add(decimal.NewFromBigInt(bigVal, 0))
+		}
 	}
 	total,_ = total.QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
 	return total
+}
+
+func checkIsValidVoterVest(val uint64) bool {
+	if val < MinVoterDistributeVest {
+		return false
+	}
+	return true
 }
 
 func calcActualReward(distributeReward decimal.Decimal, voterVest decimal.Decimal, totalVest decimal.Decimal) decimal.Decimal {
@@ -611,8 +624,10 @@ func calcActualReward(distributeReward decimal.Decimal, voterVest decimal.Decima
 }
 
 func GetPeriodByBlockNum(blkNum uint64) uint64 {
-	if blkNum > config.ServiceStarPeriodBlockNum {
+	if blkNum >= config.ServiceStarPeriodBlockNum {
 		blkNum -= config.ServiceStarPeriodBlockNum
+	} else {
+		return 0
 	}
 	period := blkNum / config.DistributeInterval
 	return period
@@ -721,7 +736,12 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	nextPeriod := curPeriod + 1
 	sBlkNum := getStartBlockNumByPeriod(nextPeriod)
 	diffBlk := lib - sBlkNum
-	if latestPeriod + 1 < nextPeriod {
+	if curPeriod <  1 {
+		if config.ServiceStarPeriodBlockNum > config.DistributeInterval {
+			sBlkNum = config.ServiceStarPeriodBlockNum - config.DistributeInterval
+		}
+		diffBlk = lib - sBlkNum
+	} else if latestPeriod + 1 < nextPeriod {
 		curPeriod = latestPeriod
 		nextPeriod = curPeriod + 1
 		sBlkNum = getStartBlockNumByPeriod(nextPeriod)
