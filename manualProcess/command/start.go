@@ -75,7 +75,7 @@ func startService(cmd *cobra.Command, args []string)  {
 					defer db.Close()
 					for _,rec := range recs {
 						if  utils.CheckIsNotEmptyStr(rec.RecId) {
-							if rec.Status == types.ProcessingStatusFail || rec.Status == types.ProcessingStatusNotTransfer {
+							if rec.Status == types.ProcessingStatusFail || rec.Status == types.ProcessingStatusNotNeedTransfer {
 								var err error
 								var rewardRec types.BpRewardRecord
 								err = db.Take(&rewardRec, "id=?", rec.RecId).Error

@@ -380,6 +380,10 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 	} else {
 		sv.logDistributeBpInfo(period, statistics)
 		for _,data := range statistics {
+			if CheckIsDistributableBp(data.BlockProducer) {
+				//not need to distribute cold start reward to distribute bp
+				continue
+			}
 			// calculate total reward of bp(cold start + ecological reward)
 			totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 			sv.logger.Infof("startDistributeToBp: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
