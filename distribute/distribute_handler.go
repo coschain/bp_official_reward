@@ -315,7 +315,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 				distributeReward := totalReward
 				sv.logger.Infof("startDistribute: total distribute block reward of bp:%v is %v", bp, distributeReward.String())
 				for _,acct := range voterList {
-					if checkIsValidVoterVest(acct.Vest) {
+					if !checkIsValidVoterVest(acct.Vest) {
 						//not distribute reward to voter whose vest is less than MinVoterDistributeVest
 						continue
 					}
@@ -725,7 +725,6 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get latest lib on time %v, the error is %v", curTime, err)
 		return nil, errors.New("fail to get latest lib"), types.StatusGetLibError
 	}
-
 	latestPeriod,err := db.GetLatestDistributedPeriod(true)
 	if err != nil {
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get latest distribute period on time %v, the error is %v", curTime, err)
@@ -736,11 +735,11 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	nextPeriod := curPeriod + 1
 	sBlkNum := getStartBlockNumByPeriod(nextPeriod)
 	diffBlk := lib - sBlkNum
-	if curPeriod <  1 {
+	if lib < config.ServiceStarPeriodBlockNum {
 		if config.ServiceStarPeriodBlockNum > config.DistributeInterval {
 			sBlkNum = config.ServiceStarPeriodBlockNum - config.DistributeInterval
+			diffBlk = lib - sBlkNum
 		}
-		diffBlk = lib - sBlkNum
 	} else if latestPeriod + 1 < nextPeriod {
 		curPeriod = latestPeriod
 		nextPeriod = curPeriod + 1
