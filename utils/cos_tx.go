@@ -136,3 +136,10 @@ func transferVestBySignedTx(signedTx *prototype.SignedTransaction, rpcClient *rp
 	}
 	return txHash, nil
 }
+
+func GetAccountReponseByName(name string) (*grpcpb.GetAccountByNameRequest) {
+	req := &grpcpb.GetAccountByNameRequest{
+		AccountName: prototype.NewAccountName(name),
+	}
+	return  req
+}
