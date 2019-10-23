@@ -60,7 +60,7 @@ var (
 	}
 
 	cacheSv  *cacheService
-
+	isEstimating bool
 )
 
 type RewardDistributeService struct {
@@ -718,6 +718,14 @@ func EstimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 
 func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int) {
 	logger := logs.GetLogger()
+	if isEstimating {
+		logger.Errorf("last estimate is not finish")
+		return nil, errors.New("last estimate not finish"), types.StatusCalcCreatedBlockError
+	}
+	isEstimating = true
+	defer func() {
+		isEstimating = false
+	}()
 	curTime := time.Now().Unix()
 	logger.Infof("EstimateCurrentPeriodReward: estimate current period reward on time: %v", curTime)
 	lib,err := db.GetLib()
