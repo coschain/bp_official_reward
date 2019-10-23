@@ -5,11 +5,12 @@ import (
 )
 
 const (
-	ProcessingStatusDefault = 0
-	ProcessingStatusSuccess = 1
-	ProcessingStatusFail    = 2
-	ProcessingStatusNotNeedTransfer = 3
-	ProcessingStatusGenTxFail = 4
+	ProcessingStatusDefault = 0   //default status
+	ProcessingStatusSuccess = 1   //transfer success
+	ProcessingStatusFail    = 2   //transfer fail
+	ProcessingStatusNotNeedTransfer = 3 //not need to transfer(transfer amount is 0 or voter's vest is invalid(less than 10 VEST))
+	ProcessingStatusGenTxFail = 4  //generate transfer to vest hash fail
+	ProcessingStatusPending = 5  // use to mark the only statistics not distribute reward by service in the early stage
 
 	RewardTypeToVoter = 0   //distribute reward to bp
 	RewardTypeToBp = 1      //distribute reward to voter

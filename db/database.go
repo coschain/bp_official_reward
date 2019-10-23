@@ -877,7 +877,7 @@ func CalcBpGeneratedBlocksOnOnePeriod(start uint64, end uint64) ([]*types.BpBloc
 	sql := fmt.Sprintf("select count(*) as total_count, block_producer from %v where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, start, end, 1)
 	if sTabName != eTabName {
 		// need select union two table
-		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select * from %v union all (select * from %v)) as t where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, eTabName, start, end, 1)
+		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select * from %v where block_height > %v and block_height <= %v union all (select * from %v where block_height > %v and block_height <= %v)) as t where  final = %v GROUP BY block_producer ORDER BY total_count", sTabName, start, end, eTabName, start, end,1)
 	}
 	err = db.Raw(sql).Scan(&list).Error
 	if err != nil {

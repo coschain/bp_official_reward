@@ -4,7 +4,6 @@ import (
 	"bp_official_reward/config"
 	"bp_official_reward/db"
 	"bp_official_reward/logs"
-	"bp_official_reward/rpc"
 	"bp_official_reward/types"
 	"bp_official_reward/utils"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"github.com/coschain/contentos-go/app/plugins"
 	"github.com/coschain/contentos-go/common/constants"
 	"github.com/coschain/contentos-go/prototype"
-	"github.com/coschain/contentos-go/rpc/pb"
 	"github.com/robfig/cron"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
@@ -33,6 +31,10 @@ const (
 	EcologicalRewardMaxYear = 12
 	YearBlkNum = YearDay * 86400
 	MinVoterDistributeVest uint64 = 10 * constants.COSTokenDecimals  // the min vest that the voter can receive the reward is 100
+
+	TransferTypeDefault = 0
+	TransferTypeInvalideVoter = 1 //voter's valid vest is less than  MinVoterDistributeVest
+	TransferTypePending = 2
 )
 
 var (
@@ -317,8 +319,9 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 				distributeReward := totalReward
 				sv.logger.Infof("startDistribute: total distribute block reward of bp:%v is %v", bp, distributeReward.String())
 				for _,acct := range voterList {
-					if !checkIsValidVoterVest(acct.Vest) {
+					if !checkIsValidVoterVest(acct.Vest) || acct.Name == bp{
 						//not distribute reward to voter whose vest is less than MinVoterDistributeVest
+						//not distribute reward to official bp if official bp vote it self
 						continue
 					}
 					bigVal := new(big.Int).SetUint64(acct.Vest)
@@ -351,12 +354,12 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 						DistributeBlockNumber: endBlk,
 						AnnualizedRate: calcAnnualizedROI(generatedBlkNum, *coldStartSingleReward, RewardRate, totalVest.String()),
 					}
-					rewardable := false
-					//if bigVal.Uint64() < MinVoterDistributeVest {
-					//	//if voter's vest is less than 10 vest, not need to distribute reward to it
-					//	rewardable = false
-					//}
-					sv.sendRewardToAccount(rewardRec, transferReward, rewardable)
+					disType := TransferTypePending
+					if bigVal.Uint64() < MinVoterDistributeVest {
+						//if voter's vest is less than 10 vest, not need to distribute reward to it
+						disType = TransferTypeInvalideVoter
+					}
+					sv.sendRewardToAccount(rewardRec, transferReward, disType)
 				}
 		}
 
@@ -438,7 +441,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 				VoterList: voterList,
 			}
 			list = append(list, bpInfo)
-			err = sv.sendRewardToAccount(rec, bigAmount, false)
+			err = sv.sendRewardToAccount(rec, bigAmount, TransferTypePending)
 			if err != nil {
 				sv.logger.Errorf("startDistributeToBp: fail to send reward to bp:%v, the error is %v , the rec is %+v", data.BlockProducer, err, rec)
 			}
@@ -469,7 +472,7 @@ func (sv *RewardDistributeService) getPeriodRangeBlockTime(start uint64, end uin
 	return sBlkLog.BlockTime, eBlkLog.BlockTime, nil
 }
 
-func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpRewardRecord, rewardAmount *big.Int, rewardable bool) error {
+func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpRewardRecord, rewardAmount *big.Int, disType int) error {
 	if rewardRec == nil {
 		sv.logger.Errorf("sendRewardToAccount: fail to send reward with empty BpRewardRecord")
 		return errors.New("can't send reward with empty BpRewardRecord")
@@ -480,10 +483,14 @@ func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpReward
 		txHash string
 		isTransfer  = true
 	)
-	if rewardAmount.Uint64() == 0 || !rewardable {
+	if rewardAmount.Uint64() == 0 || disType == TransferTypeInvalideVoter {
 		//amount is 0 or voters's vest is less than MinVoterDistributeVest, not needed to transfer
 		sv.logger.Infof("sendRewardToAccount: not need transfer,transfer vest amount to %v is %v", rewardRec.Voter, rewardAmount.Uint64())
 		rewardRec.Status = types.ProcessingStatusNotNeedTransfer
+		isTransfer  = false
+	} else if disType ==  TransferTypePending {
+        //not distribute reward immediately
+        rewardRec.Status = types.ProcessingStatusPending
 		isTransfer  = false
 	} else {
 		senderAcct,senderPrivkey := config.GetMainNetCosSenderInfo()
@@ -776,15 +783,17 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get block log of start block %v, the error is %v", sBlkNum, err)
 		return nil,errors.New("fail to get block log of start block"),types.StatusGetBlockLogError
 	}
-	//eBlockLog,err := db.GetBlockLogByNum(eBlkNum)
-	//if err != nil {
-	//	logger.Errorf("EstimateCurrentPeriodReward: fail to get block log of end block %v, the error is %v", eBlkNum, err)
-	//	return nil,errors.New("fail to get block log of start block"),types.StatusGetBlockLogError
-	//}
+	eBlockLog,err := db.GetBlockLogByNum(eBlkNum)
+	if err != nil {
+		logger.Errorf("EstimateCurrentPeriodReward: fail to get block log of end block %v, the error is %v", eBlkNum, err)
+		return nil,errors.New("fail to get block log of start block"),types.StatusGetBlockLogError
+	}
 	sBlkTime := sBlockLog.BlockTime.Unix()
 	estimateEndBlkTime := sBlkTime + (int64(config.DistributeInterval))
-	//eBlkTime := eBlockLog.BlockTime.Unix()
+	eBlkTime := eBlockLog.BlockTime.Unix()
 	singleBlkReward := CalcSingleBlockRewardByPeriod(nextPeriod)
+	logger.Infof("EstimateCurrentPeriodReward: estimate bp reward of next period %v , start block time is %v, end block time is %v", nextPeriod, sBlkTime, eBlkTime)
+
 
 	var (
 		list []*types.EstimatedRewardInfo
@@ -810,17 +819,14 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 		info.AccumulatedReward = totalAmount.String()
 		logger.Infof("EstimateCurrentPeriodReward: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
-		//voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sBlkTime, eBlkTime, sBlkNum, eBlkNum)
-		//if err != nil {
-		//	logger.Errorf("EstimateCurrentPeriodReward: Fail to get all voters who can get reward from bp:%v, the error is %v", data.BlockProducer, err)
-		//	return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
-		//}
-		//totalVoterVest := getTotalVestOfVoters(voterList)
-		client, _ := rpc.CosRpcPoolInstance().GetRpcClient()
-		acc, _ := client.GetAccountByName( &grpcpb.GetAccountByNameRequest{ AccountName:&prototype.AccountName{Value:data.BlockProducer} } )
-		tVest := acc.Info.BlockProducer.BpVest.VoteVest.Value
-		bigVal := new(big.Int).SetUint64(tVest)
-		totalVoterVest,_ := decimal.NewFromBigInt(bigVal, 0).QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
+		voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sBlkTime, eBlkTime, sBlkNum, eBlkNum)
+		if err != nil {
+			logger.Errorf("EstimateCurrentPeriodReward: Fail to get all voters who can get reward from bp:%v, the error is %v", data.BlockProducer, err)
+			return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
+		}
+		logger.Infof("bp:%v's valid voter count is %v", data.BlockProducer, len(voterList))
+		totalVoterVest := getTotalVestOfVoters(voterList)
+
 
 		info.EstimatedVotersVest = totalVoterVest.String()
 		isDistributable := CheckIsDistributableBp(data.BlockProducer)
