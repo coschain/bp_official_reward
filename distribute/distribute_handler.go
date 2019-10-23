@@ -4,6 +4,7 @@ import (
 	"bp_official_reward/config"
 	"bp_official_reward/db"
 	"bp_official_reward/logs"
+	"bp_official_reward/rpc"
 	"bp_official_reward/types"
 	"bp_official_reward/utils"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"github.com/coschain/contentos-go/app/plugins"
 	"github.com/coschain/contentos-go/common/constants"
 	"github.com/coschain/contentos-go/prototype"
+	"github.com/coschain/contentos-go/rpc/pb"
 	"github.com/robfig/cron"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
@@ -774,11 +776,16 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get block log of start block %v, the error is %v", sBlkNum, err)
 		return nil,errors.New("fail to get block log of start block"),types.StatusGetBlockLogError
 	}
-	sBlkTime  := sBlockLog.BlockTime.Unix()
+	//eBlockLog,err := db.GetBlockLogByNum(eBlkNum)
+	//if err != nil {
+	//	logger.Errorf("EstimateCurrentPeriodReward: fail to get block log of end block %v, the error is %v", eBlkNum, err)
+	//	return nil,errors.New("fail to get block log of start block"),types.StatusGetBlockLogError
+	//}
+	sBlkTime := sBlockLog.BlockTime.Unix()
 	estimateEndBlkTime := sBlkTime + (int64(config.DistributeInterval))
+	//eBlkTime := eBlockLog.BlockTime.Unix()
 	singleBlkReward := CalcSingleBlockRewardByPeriod(nextPeriod)
 
-	sTime := curTime - int64(diffBlk)
 	var (
 		list []*types.EstimatedRewardInfo
 	)
@@ -803,12 +810,18 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 		info.AccumulatedReward = totalAmount.String()
 		logger.Infof("EstimateCurrentPeriodReward: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
-		voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sTime, curTime, sBlkNum, eBlkNum)
-		if err != nil {
-			logger.Errorf("EstimateCurrentPeriodReward: Fail to get all voters who can get reward from bp:%v, the error is %v", data.BlockProducer, err)
-			return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
-		}
-		totalVoterVest := getTotalVestOfVoters(voterList)
+		//voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sBlkTime, eBlkTime, sBlkNum, eBlkNum)
+		//if err != nil {
+		//	logger.Errorf("EstimateCurrentPeriodReward: Fail to get all voters who can get reward from bp:%v, the error is %v", data.BlockProducer, err)
+		//	return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
+		//}
+		//totalVoterVest := getTotalVestOfVoters(voterList)
+		client, _ := rpc.CosRpcPoolInstance().GetRpcClient()
+		acc, _ := client.GetAccountByName( &grpcpb.GetAccountByNameRequest{ AccountName:&prototype.AccountName{Value:data.BlockProducer} } )
+		tVest := acc.Info.BlockProducer.BpVest.VoteVest.Value
+		bigVal := new(big.Int).SetUint64(tVest)
+		totalVoterVest,_ := decimal.NewFromBigInt(bigVal, 0).QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
+
 		info.EstimatedVotersVest = totalVoterVest.String()
 		isDistributable := CheckIsDistributableBp(data.BlockProducer)
 		rewardRate := RewardRate
