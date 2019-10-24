@@ -7,8 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/coschain/cobra"
-	"github.com/jinzhu/gorm"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/jinzhu/gorm"
 	"io/ioutil"
 	"os"
 )
@@ -19,8 +19,6 @@ type failRec struct {
 	TransferTx string `json:"transferTx"`
 	Status   int   `json:"status"`
 }
-
-var svEnv string
 
 var StartCmd = func() *cobra.Command {
 	cmd := &cobra.Command{
@@ -36,72 +34,75 @@ var StartCmd = func() *cobra.Command {
 }
 
 func startService(cmd *cobra.Command, args []string)  {
-	var rewardConfig config.RewardConfig
-	cfgJson,err := ioutil.ReadFile("../../bp_reward.json")
+	err := config.SetConfigEnv(svEnv)
 	if err != nil {
-		fmt.Printf("LoadSwapConfig:fail to read json file, the error is %v \n", err)
+		fmt.Printf("StartService:fail to set env \n")
+		os.Exit(1)
+	}
+
+	//load config json file
+	err = config.LoadRewardConfig("../../bp_reward.json")
+	if err != nil {
+		fmt.Println("StartService:fail to load config file ")
+		os.Exit(1)
+	}
+
+	//load fail swap records file
+	recJson,err := ioutil.ReadFile(config.GetFailDistributeFilePath())
+	if err != nil {
+		fmt.Printf("fail to load failed reward records, the error is %v \n", err)
+		os.Exit(1)
 	} else {
-		if err := json.Unmarshal(cfgJson, &rewardConfig); err != nil {
-			fmt.Printf("LoadSwapConfig: fail to  Unmarshal json, the error is %v", err)
+		var recs []failRec
+		err := json.Unmarshal(recJson, &recs)
+		if err != nil {
+			fmt.Printf("fail to Unmarshal records, the error is %v \n", err)
 			os.Exit(1)
+			return
 		} else {
-			env := rewardConfig.Dev
-			if svEnv == config.EnvTest {
-				env = rewardConfig.Test
-			} else if svEnv == config.EnvPro {
-				env = rewardConfig.Pro
-			}
-			//load fail swap records file
-			recJson,err := ioutil.ReadFile(env.FailDistributeFilePath)
+			fmt.Printf("records number is %v \n", len(recs))
+			dbCfg, err := config.GetRewardDbConfig()
 			if err != nil {
-				fmt.Printf("fail to load failed swap records, the error is %v \n", err)
-			} else {
-				var recs []failRec
-				err := json.Unmarshal(recJson, &recs)
-				if err != nil {
-					fmt.Printf("fail to Unmarshal records, the error is %v \n", err)
-					os.Exit(1)
-					return
-				} else {
-					fmt.Printf("records number is %v \n", len(recs))
-					//open db
-					source := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", env.DbUser, env.DbPassword, env.DbHost, env.DbPort, env.DbName)
-					db,err := gorm.Open(env.DbDriver, source)
-					if err != nil {
-						fmt.Printf("fail to open db, the error is %v \n",err)
-						os.Exit(1)
-						return
-					}
-					defer db.Close()
-					for _,rec := range recs {
-						if  utils.CheckIsNotEmptyStr(rec.RecId) {
-							if rec.Status == types.ProcessingStatusFail || rec.Status == types.ProcessingStatusNotNeedTransfer {
-								var err error
-								var rewardRec types.BpRewardRecord
-								err = db.Take(&rewardRec, "id=?", rec.RecId).Error
-								if err != nil {
-									fmt.Printf("fail to get record,the error is %v \n", err)
-									continue
-								}
-								if utils.CheckIsNotEmptyStr(rec.TransferTx) {
-									err = db.Model(&types.BpRewardRecord{}).Where("id=?", rec.RecId).Updates(map[string]interface{}{"status":rec.Status, "transfer_tx_hash": rec.TransferTx}).Error
-								} else {
-									err = db.Model(&types.BpRewardRecord{}).Where("id=?", rec.RecId).Update("status",rec.Status).Error
-								}
-								if err != nil {
-									fmt.Printf("fail to modify rec %v, the error is %v \n", rec, err)
-								} else {
-									fmt.Printf("succcess modify rec %v \n", rec)
-								}
-							}
+				fmt.Printf("fail to get reward db config")
+				os.Exit(1)
+				return
+			}
+			//open db
+			source := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local", dbCfg.User, dbCfg.Password, dbCfg.Host, dbCfg.Port, dbCfg.DbName)
+			db, err := gorm.Open(dbCfg.Driver, source)
+			if err != nil {
+				fmt.Printf("fail to open db, the error is %v \n", err)
+				os.Exit(1)
+				return
+			}
+			defer db.Close()
+			for _, rec := range recs {
+				if utils.CheckIsNotEmptyStr(rec.RecId) {
+					if rec.Status == types.ProcessingStatusFail || rec.Status == types.ProcessingStatusNotNeedTransfer {
+						var err error
+						var rewardRec types.BpRewardRecord
+						err = db.Take(&rewardRec, "id=?", rec.RecId).Error
+						if err != nil {
+							fmt.Printf("fail to get record,the error is %v \n", err)
+							continue
+						}
+						if utils.CheckIsNotEmptyStr(rec.TransferTx) {
+							err = db.Model(&types.BpRewardRecord{}).Where("id=?", rec.RecId).Updates(map[string]interface{}{"status": rec.Status, "transfer_tx_hash": rec.TransferTx}).Error
 						} else {
-							fmt.Printf("can't modify invalid rec %v \n", rec)
+							err = db.Model(&types.BpRewardRecord{}).Where("id=?", rec.RecId).Update("status", rec.Status).Error
+						}
+						if err != nil {
+							fmt.Printf("fail to modify rec %v, the error is %v \n", rec, err)
+						} else {
+							fmt.Printf("succcess modify rec %v \n", rec)
 						}
 					}
+				} else {
+					fmt.Printf("can't modify invalid rec %v \n", rec)
 				}
-
 			}
 		}
 	}
+
 	os.Exit(0)
 }

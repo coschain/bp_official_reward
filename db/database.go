@@ -979,3 +979,32 @@ func GetMaxROIOfBpReward() (float64,error) {
 	}
 	return maxROI,nil
 }
+
+func GetAllRewardRecordsOfOnePeriod(period uint64) ([]*types.BpRewardRecord, error) {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("GetAllRewardRecordsOfOnePeriod: fail to get db,the error is %v", err)
+		return nil,err
+	}
+	var list []*types.BpRewardRecord
+	err = db.Where("period=?", period).Find(&list).Error
+	if err != nil {
+		logger.Errorf("GetAllRewardRecordsOfOnePeriod: fail to get all reward record of period:%v,the error is %v", period, err)
+		return nil,err
+	}
+	return list, nil
+}
+
+func MdRewardRecord(rec *types.BpRewardRecord) error {
+	if rec == nil {
+		return errors.New("can't update empty reward record")
+	}
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("MdRewardRecord: fail to get db,the error is %v", err)
+		return err
+	}
+	return db.Save(rec).Error
+}

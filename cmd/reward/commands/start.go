@@ -41,7 +41,7 @@ func startService(cmd *cobra.Command, args []string)  {
 	}
 
 	//load config json file
-	err = config.LoadRewardConfig()
+	err = config.LoadRewardConfig("../../../bp_reward.json")
 	if err != nil {
 		fmt.Println("StartService:fail to load config file ")
 		os.Exit(1)

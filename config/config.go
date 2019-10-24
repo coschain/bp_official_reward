@@ -79,12 +79,12 @@ var (
 
 
 // read config json file
-func LoadRewardConfig() error {
+func LoadRewardConfig(path string) error {
 	if rewardConfig != nil {
 		return nil
 	}
 	var config RewardConfig
-	cfgJson,err := ioutil.ReadFile("../../../bp_reward.json")
+	cfgJson,err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Printf("LoadRewardConfig:fail to read json file, the error is %v", err)
 		return err
@@ -159,6 +159,13 @@ func GetHttpPort() string {
 func GetLogOutputPath() string {
 	if rewardConfig != nil {
 		return rewardConfig.LogPath
+	}
+	return ""
+}
+
+func GetFailDistributeFilePath() string {
+	if rewardConfig != nil {
+		return rewardConfig.FailDistributeFilePath
 	}
 	return ""
 }
