@@ -30,10 +30,9 @@ const (
 	//Ecological reward
 	EcologicalRewardMaxYear = 12
 	YearBlkNum = YearDay * 86400
-	MinVoterDistributeVest uint64 = 10 * constants.COSTokenDecimals  // the min vest that the voter can receive the reward is 100
 
 	TransferTypeDefault = 0
-	TransferTypeInvalideVoter = 1 //voter's valid vest is less than  MinVoterDistributeVest
+	TransferTypeInvalideVoter = 1 //voter's valid vest is less than  utils.MinVoterDistributeVest
 	TransferTypePending = 2
 )
 
@@ -304,8 +303,8 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 				sv.logger.Errorf("startDistribute: Fail to get all voters who can get reward from bp:%v, the error is %v", bp, err)
 				continue
 			} else {
-				//calculate all voter's total vest
-				totalVest = getTotalVestOfVoters(voterList)
+				//calculate all voter's total vest, filter distribute bp if it has voted to self
+				totalVest = getTotalVestOfVoters(voterList, true)
 			}
 		}
 		sv.logger.Infof("startDistribute: this round voters number of bp:%v is %v, total vest of all voters is %v", bp, len(voterList), totalVest.String())
@@ -320,7 +319,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 				sv.logger.Infof("startDistribute: total distribute block reward of bp:%v is %v", bp, distributeReward.String())
 				for _,acct := range voterList {
 					if !checkIsValidVoterVest(acct.Vest) || acct.Name == bp{
-						//not distribute reward to voter whose vest is less than MinVoterDistributeVest
+						//not distribute reward to voter whose vest is less than utils.MinVoterDistributeVest
 						//not distribute reward to official bp if official bp vote it self
 						continue
 					}
@@ -355,11 +354,11 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 						AnnualizedRate: calcAnnualizedROI(generatedBlkNum, *coldStartSingleReward, RewardRate, totalVest.String()),
 					}
 					disType := TransferTypePending
-					if bigVal.Uint64() < MinVoterDistributeVest {
+					if bigVal.Uint64() < utils.MinVoterDistributeVest {
 						//if voter's vest is less than 10 vest, not need to distribute reward to it
 						disType = TransferTypeInvalideVoter
 					}
-					sv.sendRewardToAccount(rewardRec, transferReward, disType)
+					sv.sendRewardToAccount(rewardRec, transferReward, disType) 
 				}
 		}
 
@@ -409,7 +408,8 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 			if err != nil {
 				sv.logger.Errorf("startDistributeToBp: fail to get all voters of bp:%v on this period, the error is %v", data.BlockProducer, err)
 			} else {
-				totalVest = getTotalVestOfVoters(voterList)
+				//filter distribute bp if it has voted self
+				totalVest = getTotalVestOfVoters(voterList, true)
 			}
 			sv.logger.Infof("startDistributeToBp: bp:%v's totalVest is %v,voters count is %v", data.BlockProducer, totalVest.String(), len(voterList))
 			//send reward to bp
@@ -484,7 +484,7 @@ func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpReward
 		isTransfer  = true
 	)
 	if rewardAmount.Uint64() == 0 || disType == TransferTypeInvalideVoter {
-		//amount is 0 or voters's vest is less than MinVoterDistributeVest, not needed to transfer
+		//amount is 0 or voters's vest is less than utils.MinVoterDistributeVest, not needed to transfer
 		sv.logger.Infof("sendRewardToAccount: not need transfer,transfer vest amount to %v is %v", rewardRec.Voter, rewardAmount.Uint64())
 		rewardRec.Status = types.ProcessingStatusNotNeedTransfer
 		isTransfer  = false
@@ -605,10 +605,16 @@ func GetSingleBlockRewardOfColdStart(t time.Time) (*decimal.Decimal,int64) {
 }
 
 
-func getTotalVestOfVoters(list []*types.AccountInfo) decimal.Decimal {
+func getTotalVestOfVoters(list []*types.AccountInfo, isFilterDisBp bool) decimal.Decimal {
 	total := decimal.New(0, 0)
 	for _,acct := range list {
-		if checkIsValidVoterVest(acct.Vest) {
+		isContain := true
+		if !checkIsValidVoterVest(acct.Vest) {
+			isContain = false
+		} else if isFilterDisBp && CheckIsDistributableBp(acct.Name) {
+			isContain = false
+		}
+		if isContain {
 			bigVal := new(big.Int).SetUint64(acct.Vest)
 			total = total.Add(decimal.NewFromBigInt(bigVal, 0))
 		}
@@ -618,7 +624,7 @@ func getTotalVestOfVoters(list []*types.AccountInfo) decimal.Decimal {
 }
 
 func checkIsValidVoterVest(val uint64) bool {
-	if val < MinVoterDistributeVest {
+	if val < utils.MinVoterDistributeVest {
 		return false
 	}
 	return true
@@ -825,7 +831,8 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 			return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
 		}
 		logger.Infof("bp:%v's valid voter count is %v", data.BlockProducer, len(voterList))
-		totalVoterVest := getTotalVestOfVoters(voterList)
+		//not need to filter distribute bp
+		totalVoterVest := getTotalVestOfVoters(voterList, false)
 
 
 		info.EstimatedVotersVest = totalVoterVest.String()

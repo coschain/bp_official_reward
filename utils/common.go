@@ -13,6 +13,9 @@ import (
 	"math"
 )
 
+const MinVoterDistributeVest uint64 = 10 * constants.COSTokenDecimals  // the min vest that the voter can receive the reward is 100
+
+
 // generate mainet cos transfer tx id
 func GenMainnetCOSTransferTxId(txHash string, opIdx int) string {
 	return txHash + "_" + strconv.Itoa(opIdx)

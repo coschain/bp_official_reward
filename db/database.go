@@ -633,7 +633,7 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 	}
 	var infoList []*types.AccountInfo
 
-	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > ? AND time <= ? AND bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1", sTime, endTime,bpName, sBlkNum , eBlkNum).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ?)", sTime, endTime, sTime, endTime).Scan(&infoList).Error
+	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > ? AND time <= ? AND bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1", sTime, endTime,bpName, sBlkNum , eBlkNum).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest >= ?)", sTime, endTime, sTime, endTime, utils.MinVoterDistributeVest).Scan(&infoList).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
@@ -644,6 +644,7 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 	}
 	return infoList, nil
 }
+
 
 func GetUserRewardHistory(acctName string, pageIndex int, pageSize int) ([]*types.BpRewardRecord, error, int) {
 	logger := logs.GetLogger()
@@ -877,7 +878,7 @@ func CalcBpGeneratedBlocksOnOnePeriod(start uint64, end uint64) ([]*types.BpBloc
 	sql := fmt.Sprintf("select count(*) as total_count, block_producer from %v where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, start, end, 1)
 	if sTabName != eTabName {
 		// need select union two table
-		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select * from %v where block_height > %v and block_height <= %v union all (select * from %v where block_height > %v and block_height <= %v)) as t where  final = %v GROUP BY block_producer ORDER BY total_count", sTabName, start, end, eTabName, start, end,1)
+		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select block_producer from %v where block_height > %v and block_height <= %v and final = %v union all (select block_producer from %v where block_height > %v and block_height <= %v and final = %v)) as t GROUP BY block_producer ORDER BY total_count", sTabName, start, end, 1, eTabName, start, end,1)
 	}
 	err = db.Raw(sql).Scan(&list).Error
 	if err != nil {
