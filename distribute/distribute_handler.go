@@ -32,8 +32,9 @@ const (
 	YearBlkNum = YearDay * 86400
 
 	TransferTypeDefault = 0
-	TransferTypeInvalideVoter = 1 //voter's valid vest is less than  utils.MinVoterDistributeVest
+	TransferTypeInvalideVoter = 1 //voter's valid vest is less than utils.MinVoterDistributeVest
 	TransferTypePending = 2
+	TransferTypeOfficialBp = 3 // official distribute bp (not need distribute reward to these bp)
 )
 
 var (
@@ -388,10 +389,6 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 	} else {
 		sv.logDistributeBpInfo(period, statistics)
 		for _,data := range statistics {
-			if CheckIsDistributableBp(data.BlockProducer) {
-				//not need to distribute cold start reward to distribute bp
-				continue
-			}
 			// calculate total reward of bp(cold start + ecological reward)
 			totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 			sv.logger.Infof("startDistributeToBp: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
@@ -441,7 +438,12 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 				VoterList: voterList,
 			}
 			list = append(list, bpInfo)
-			err = sv.sendRewardToAccount(rec, bigAmount, TransferTypePending)
+			disType := TransferTypePending
+			if CheckIsDistributableBp(data.BlockProducer) {
+				//not need to distribute cold start reward to distribute bp
+				disType = TransferTypeOfficialBp
+			}
+			err = sv.sendRewardToAccount(rec, bigAmount, disType)
 			if err != nil {
 				sv.logger.Errorf("startDistributeToBp: fail to send reward to bp:%v, the error is %v , the rec is %+v", data.BlockProducer, err, rec)
 			}
@@ -483,8 +485,9 @@ func (sv *RewardDistributeService) sendRewardToAccount(rewardRec *types.BpReward
 		txHash string
 		isTransfer  = true
 	)
-	if rewardAmount.Uint64() == 0 || disType == TransferTypeInvalideVoter {
+	if rewardAmount.Uint64() == 0 || disType == TransferTypeInvalideVoter || disType == TransferTypeOfficialBp {
 		//amount is 0 or voters's vest is less than utils.MinVoterDistributeVest, not needed to transfer
+		// not need send reward to official bp
 		sv.logger.Infof("sendRewardToAccount: not need transfer,transfer vest amount to %v is %v", rewardRec.Voter, rewardAmount.Uint64())
 		rewardRec.Status = types.ProcessingStatusNotNeedTransfer
 		isTransfer  = false
