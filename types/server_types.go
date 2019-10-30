@@ -19,6 +19,7 @@ const (
 	StatusGetAllVoterVestError = 611
 	StatusGetTotalVoterCountError = 612
 	StatusGetMaxROIError = 613
+	StatusConvertRewardError = 614
 )
 
 type BaseResponse struct {

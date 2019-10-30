@@ -24,7 +24,7 @@ import (
 const (
 	MainNetStartTimeStamp = 1569380400 //20190925 11am
     YearDay = 365
-    RewardRate float64 = 0.8  //cold start reward rate
+    RewardRate float64 = 0.79  //cold start reward rate
     //cold start reward
 	ColdStartRewardMaxYear = 5
 	//Ecological reward
@@ -699,17 +699,27 @@ func GetBpRewardHistory(period int) ([]*types.RewardInfo, error, int) {
 			rewardInfo.EndBlockTime =  strconv.FormatInt(periodBlkInfo.EndBlockTime, 10)
 			rewardInfo.DistributeTime = strconv.FormatInt(periodBlkInfo.DistributeTime, 10)
 			for _,rec := range bpRewardList {
+				singleReward,err := decimal.NewFromString(rec.SingleBlockReward)
+				if err != nil {
+					logger.Errorf("GetBpRewardHistory: fail to convert single block reward:%v to decimal, the error is %v", rec.SingleBlockReward, err)
+					return nil,err, types.StatusConvertRewardError
+				}
 				annualizedInfo := getAnnualizedInfoByRewardRec(rec)
-				rate := utils.FormatFloatValue(float64(rec.RewardRate), 2)
+				rate := RewardRate
+				if !CheckIsDistributableBp(rec.Bp) {
+					rate = 1.0
+				}
+				rateStr := utils.FormatFloatValue(rate, 2)
+
 				record := &types.RewardRecord {
 					IsDistributable: CheckIsDistributableBp(rec.Bp),
 					BpName: rec.Bp,
 					GenBlockCount: strconv.FormatUint(rec.CreatedBlockNumber, 10),
 					TotalReward: annualizedInfo.TotalReward,
-					RewardRate: rate,
+					RewardRate: rateStr,
 					VotersVest: rec.TotalVoterVest,
-					EveryThousandRewards: annualizedInfo.EveryThousandRewards,
-					AnnualizedROI: annualizedInfo.AnnualizedROI,
+					EveryThousandRewards:  calcEveryThousandReward(rec.CreatedBlockNumber, singleReward, rate, rec.TotalVoterVest).String(),
+					AnnualizedROI: utils.FormatFloatValue(calcAnnualizedROI(rec.CreatedBlockNumber, singleReward, rate,rec.TotalVoterVest), 6),
 				}
 				recList = append(recList, record)
 			}
