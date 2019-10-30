@@ -705,21 +705,18 @@ func GetBpRewardHistory(period int) ([]*types.RewardInfo, error, int) {
 					return nil,err, types.StatusConvertRewardError
 				}
 				annualizedInfo := getAnnualizedInfoByRewardRec(rec)
-				rate := RewardRate
-				if !CheckIsDistributableBp(rec.Bp) {
-					rate = 1.0
-				}
-				rateStr := utils.FormatFloatValue(rate, 2)
-
 				record := &types.RewardRecord {
 					IsDistributable: CheckIsDistributableBp(rec.Bp),
 					BpName: rec.Bp,
 					GenBlockCount: strconv.FormatUint(rec.CreatedBlockNumber, 10),
 					TotalReward: annualizedInfo.TotalReward,
-					RewardRate: rateStr,
 					VotersVest: rec.TotalVoterVest,
-					EveryThousandRewards:  calcEveryThousandReward(rec.CreatedBlockNumber, singleReward, rate, rec.TotalVoterVest).String(),
-					AnnualizedROI: utils.FormatFloatValue(calcAnnualizedROI(rec.CreatedBlockNumber, singleReward, rate,rec.TotalVoterVest), 6),
+
+				}
+				if CheckIsDistributableBp(rec.Bp) {
+					record.RewardRate = utils.FormatFloatValue(RewardRate, 2)
+					record.EveryThousandRewards = calcEveryThousandReward(rec.CreatedBlockNumber, singleReward, RewardRate, rec.TotalVoterVest).String()
+					record.AnnualizedROI = utils.FormatFloatValue(calcAnnualizedROI(rec.CreatedBlockNumber, singleReward, RewardRate,rec.TotalVoterVest), 6)
 				}
 				recList = append(recList, record)
 			}
