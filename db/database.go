@@ -627,13 +627,17 @@ func GetVoterMinVestOfPeriod(usrName string, sTime int64, endTime int64) (uint64
 func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64, sBlkNum uint64, eBlkNum uint64) ([]*types.AccountInfo, error){
 	logger := logs.GetLogger()
 	db,err := getServiceDB()
+	//db.LogMode(true)
 	if err != nil {
 		logger.Errorf("GetAllRewardedVotersOfPeriod: fail to get db,the error is %v", err)
 		return nil, err
 	}
-	var infoList []*types.AccountInfo
+	var (
+		infoList []*types.AccountInfo
+		finalList []*types.AccountInfo
+	)
 
-	err = db.Table("account_infos").Select("DISTINCT name,vest").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > ? AND time <= ? AND bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1", sTime, endTime,bpName, sBlkNum , eBlkNum).Where("t1.voter = account_infos.name AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest = (SELECT MIN(account_infos.vest) from account_infos WHERE account_infos.NAME = t1.voter AND account_infos.time > ? AND account_infos.time <= ? AND account_infos.vest >= ?)", sTime, endTime, sTime, endTime, utils.MinVoterDistributeVest).Scan(&infoList).Error
+	err = db.Table("account_infos").Select("MIN(account_infos.vest) as vest,account_infos.name").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > ? AND time <= ? AND bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName, sBlkNum , eBlkNum).Where("account_infos.time > ? AND account_infos.time <= ?", sTime, endTime).Group("account_infos.name").Scan(&infoList).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
@@ -642,7 +646,14 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 		return nil, nil
 
 	}
-	return infoList, nil
+	//filter account which vest is less than utils.MinVoterDistributeVest
+	for _,acct := range infoList {
+		if acct.Vest >= utils.MinVoterDistributeVest {
+			finalList = append(finalList, acct)
+		}
+	}
+
+	return finalList, nil
 }
 
 
