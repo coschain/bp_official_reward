@@ -844,7 +844,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		}
 		logger.Infof("bp:%v's valid voter count is %v", data.BlockProducer, len(voterList))
 		//not need to filter distribute bp
-		totalVoterVest := getTotalVestOfVoters(voterList, false)
+		totalVoterVest := getTotalVestOfVoters(voterList, true)
 
 
 		info.EstimatedVotersVest = totalVoterVest.String()
