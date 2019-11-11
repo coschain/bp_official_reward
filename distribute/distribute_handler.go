@@ -258,7 +258,14 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 	}
 	//1. distribute reward to bp
 	bpSingleReward := CalcSingleBlockRewardByPeriod(period)
-	bpRewardInfoList,_ := sv.startDistributeToBp(period, sTime, eTime, t, bpSingleReward, *coldStartSingleReward ,startBlk, endBlk)
+	bpRewardInfoList,votersList,err := sv.startDistributeToBp(period, sTime, eTime, t, bpSingleReward, *coldStartSingleReward ,startBlk, endBlk)
+	if err != nil {
+		votersList,err = db.GetAllVoterOfBlkRange(startBlk, endBlk)
+		if err != nil {
+			sv.logger.Errorf("startDistribute: fail to get all vote records of block range(start:%v,end:%v), the error is %v", startBlk, endBlk, err)
+			return
+		}
+	}
 	//2. distribute reward to all voters
 	for _,bp := range config.OfficialBpList {
 		sv.logger.Infof("startDistribute: single block reward of year:%v is %v", curYear, coldStartSingleReward.String())
@@ -300,7 +307,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		}
 		//calculate all voter's total vest of bp
 		if isNeedCalcTotalVest {
-			voterList,err = db.GetAllRewardedVotersOfPeriodByBp(bp, sTime.Unix(), eTime.Unix(), startBlk, endBlk)
+			voterList,err = db.GetAllRewardedVotersOfPeriodByBp(bp, sTime.Unix(), eTime.Unix(), startBlk, endBlk, votersList)
 			if err != nil {
 				sv.logger.Errorf("startDistribute: Fail to get all voters who can get reward from bp:%v, the error is %v", bp, err)
 				continue
@@ -360,7 +367,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 						//if voter's vest is less than 10 vest, not need to distribute reward to it
 						disType = TransferTypeInvalideVoter
 					}
-					sv.sendRewardToAccount(rewardRec, transferReward, disType) 
+					sv.sendRewardToAccount(rewardRec, transferReward, disType)
 				}
 		}
 
@@ -372,23 +379,33 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 //
 // distribute reward to all bp that have generated blocks successfully
 //
-func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.Time, eTime time.Time, distributeTime time.Time, singleBlkReward decimal.Decimal, singleBlkColdStartReward decimal.Decimal, startBlk uint64, endBlk uint64) ([]*bpRewardInfo, error){
+func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.Time, eTime time.Time, distributeTime time.Time, singleBlkReward decimal.Decimal, singleBlkColdStartReward decimal.Decimal, startBlk uint64, endBlk uint64) ([]*bpRewardInfo, []*plugins.ProducerVoteRecord, error){
 	sv.logger.Infof("startDistributeToBp: start distribute reward to bp on block range(from:%v,to:%v)", startBlk, endBlk)
 	//1. calculate all bp's total generated blocks
 	statistics,err := db.CalcBpGeneratedBlocksOnOnePeriod(startBlk, endBlk)
 	if err != nil {
 		sv.logger.Errorf("startDistributeToBp: fail to calculate bp block statistics on period:%v , the error is %v", period ,err)
-		return nil, err
+		return nil, nil, err
 	}
 	count := len(statistics)
 	eTimeStamp := eTime.Unix()
 	sTimeStamp  := sTime.Unix()
 	sv.logger.Infof("startDistributeToBp: start time is %v, end time is %v", sTimeStamp, eTimeStamp)
-	var list []*bpRewardInfo
+	var (
+		list []*bpRewardInfo
+		curPeriodVoters []*plugins.ProducerVoteRecord
+	)
+
 	if count < 1 {
 		sv.logger.Errorf("startDistributeToBp: block statistics is empty on period:%v", period)
 	} else {
 		sv.logDistributeBpInfo(period, statistics)
+		// get all voter records of current period
+		curPeriodVoters,err = db.GetAllVoterOfBlkRange(startBlk, endBlk)
+		if err != nil {
+			sv.logger.Errorf("startDistributeToBp: fail to get all vote records of block range(start:%v,end:%v), the error is %v", startBlk, endBlk, err)
+			return nil, nil, errors.New("fail to get voter record")
+		}
 		for _,data := range statistics {
 			// calculate total reward of bp(cold start + ecological reward)
 			totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
@@ -401,7 +418,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 			distributeReward = distributeReward.Mul(decimal.NewFromFloat(constants.COSTokenDecimals))
 			bigAmount := new(big.Int)
 			bigAmount.SetString(distributeReward.String(), 10)
-			voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sTimeStamp, eTimeStamp, startBlk, endBlk)
+			voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sTimeStamp, eTimeStamp, startBlk, endBlk, curPeriodVoters)
 			totalVest := decimal.New(-1, 0)
 			if err != nil {
 				sv.logger.Errorf("startDistributeToBp: fail to get all voters of bp:%v on this period, the error is %v", data.BlockProducer, err)
@@ -451,7 +468,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 
 		}
 	}
-    return list,nil
+    return list,curPeriodVoters,nil
 
 }
 
@@ -785,7 +802,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 
 	logger.Infof("EstimateCurrentPeriodReward: estimate bp reward of next period %v , start block number is %v, end block number is %v, diff block number is %v", nextPeriod, sBlkNum, eBlkNum, eBlkNum-sBlkNum)
     // get all bp on chain
-	allBpList,err := db.GetAllBpFromChain()
+    allBpList,err := db.GetAllBpFromChain()
 	if err != nil {
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get all bp, the error is %v", err)
 	}
@@ -795,7 +812,6 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		logger.Errorf("EstimateCurrentPeriodReward: fail to calculate bp's generated block on time %v, the error is %v", curTime, err)
 		return nil,errors.New("fail to calculate bp's generated block"),types.StatusCalcCreatedBlockError
 	}
-
 	sBlockLog,err := db.GetBlockLogByNum(sBlkNum)
 	if err != nil {
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get block log of start block %v, the error is %v", sBlkNum, err)
@@ -812,6 +828,12 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	singleBlkReward := CalcSingleBlockRewardByPeriod(nextPeriod)
 	logger.Infof("EstimateCurrentPeriodReward: estimate bp reward of next period %v , start block time is %v, end block time is %v", nextPeriod, sBlkTime, eBlkTime)
 
+
+	curPeriodVoters,err := db.GetAllVoterOfBlkRange(sBlkNum, eBlkNum)
+	if err != nil {
+		logger.Errorf("EstimateCurrentPeriodReward: fail to get all vote records of block range(start:%v,end:%v), the error is %v", sBlkNum, eBlkNum, err)
+		return nil, errors.New("fail to get voter record"), types.StatusDbQueryError
+	}
 
 	var (
 		list []*types.EstimatedRewardInfo
@@ -837,11 +859,12 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 		info.AccumulatedReward = totalAmount.String()
 		logger.Infof("EstimateCurrentPeriodReward: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
-		voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sBlkTime, eBlkTime, sBlkNum, eBlkNum)
+		voterList,err := db.GetAllRewardedVotersOfPeriodByBp(data.BlockProducer, sBlkTime, eBlkTime, sBlkNum, eBlkNum, curPeriodVoters)
 		if err != nil {
 			logger.Errorf("EstimateCurrentPeriodReward: Fail to get all voters who can get reward from bp:%v, the error is %v", data.BlockProducer, err)
 			return nil, errors.New("fail to calculate voter's total vest"), types.StatusGetAllVoterVestError
 		}
+
 		logger.Infof("bp:%v's valid voter count is %v", data.BlockProducer, len(voterList))
 		//not need to filter distribute bp
 		totalVoterVest := getTotalVestOfVoters(voterList, true)

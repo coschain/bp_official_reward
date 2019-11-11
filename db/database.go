@@ -25,8 +25,9 @@ var (
 	cosNodeDb *gorm.DB
 	cosNodeDbHost string
 	curBlockHeight uint64
-	checkInterval = 1 * time.Minute
+	checkInterval = 2 * time.Minute
 	stop  chan bool
+	isChecking bool
 )
 
 func StartDbService() error {
@@ -168,7 +169,15 @@ func checkCosNodeDbValid()  {
 
 func checkBlockStatus()  {
 	logger := logs.GetLogger()
-	logger.Infoln("check block status")
+	if isChecking {
+		logger.Infoln("last round check block status not finish")
+		return
+	}
+	isChecking = true
+	defer func() {
+		isChecking = false
+	}()
+	logger.Infoln("start check block status")
 	if cosNodeDb != nil {
 		var process plugins.BlockLogProcess
 		err := cosNodeDb.Take(&process).Error
@@ -202,6 +211,8 @@ func checkBlockStatus()  {
 		}
 
 	}
+	logger.Infoln("finish this round check block status")
+
 }
 
 func CloseDbService() {
@@ -621,10 +632,28 @@ func GetVoterMinVestOfPeriod(usrName string, sTime int64, endTime int64) (uint64
 	return rec.Vest, nil
 }
 
+func GetAllVoterOfBlkRange(sBlkNum uint64, eBlkNum uint64) ([]*plugins.ProducerVoteRecord, error) {
+	logger := logs.GetLogger()
+	nodeDb,err := getCosObserveNodeDb()
+	if err != nil {
+		logger.Errorf("GetAllVoterOfBlkRange: fail to get observe db,the error is %v", err)
+		return nil, err
+	}
+	var curPeriodVoterList []*plugins.ProducerVoteRecord
+	err = nodeDb.Select("DISTINCT(voter)").Where("block_height > ? AND block_height <= ?", sBlkNum, eBlkNum).Find(&curPeriodVoterList).Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
+			return nil, err
+		}
+	}
+	return curPeriodVoterList, nil
+}
+
 //
 // get all voters which can get reward
 //
-func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64, sBlkNum uint64, eBlkNum uint64) ([]*types.AccountInfo, error){
+func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64, sBlkNum uint64, eBlkNum uint64, voterList []*plugins.ProducerVoteRecord) ([]*types.AccountInfo, error){
 	logger := logs.GetLogger()
 	db,err := getServiceDB()
 	//db.LogMode(true)
@@ -632,12 +661,27 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 		logger.Errorf("GetAllRewardedVotersOfPeriod: fail to get db,the error is %v", err)
 		return nil, err
 	}
+
 	var (
 		infoList []*types.AccountInfo
 		finalList []*types.AccountInfo
 	)
 
-	err = db.Table("account_infos").Select("MIN(account_infos.vest) as vest,account_infos.name").Joins("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > ? AND time <= ? AND bp_vote_relations.producer = ? AND bp_vote_relations.voter NOT IN (SELECT voter FROM bp_vote_records WHERE bp_vote_records.block_height > ? AND bp_vote_records.block_height <= ?)) as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName, sBlkNum , eBlkNum).Where("account_infos.time > ? AND account_infos.time <= ?", sTime, endTime).Group("account_infos.name").Scan(&infoList).Error
+	//get all vote record from observe db
+	joinSql := fmt.Sprintf("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > %v AND time <= %v AND bp_vote_relations.producer = '%v') as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName)
+	voterFilter := "''"
+	listLen := len(voterList)
+	if listLen > 0 {
+		voterFilter = ""
+		for idx,v := range voterList{
+			voterFilter += fmt.Sprintf("'%v'",v.Voter)
+			if idx + 1 < listLen {
+				voterFilter += ","
+			}
+		}
+		joinSql = fmt.Sprintf("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > %v AND time <= %v AND bp_vote_relations.producer = '%v' AND bp_vote_relations.voter NOT IN (%v)) as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName, voterFilter)
+	}
+	err = db.Table("account_infos").Select("MIN(account_infos.vest) as vest,account_infos.name").Joins(joinSql).Where("account_infos.time > ? AND account_infos.time <= ?", sTime, endTime).Group("account_infos.name").Order("name").Scan(&infoList).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
@@ -775,7 +819,8 @@ func GetLib() (uint64, error) {
 //			return  err
 //		}
 //	}
-//	return db.FirstOrCreate(log).Error
+//	//return db.FirstOrCreate(log).Error
+//	return nil
 //}
 
 //
@@ -883,13 +928,16 @@ func CalcBpGeneratedBlocksOnOnePeriod(start uint64, end uint64) ([]*types.BpBloc
 		logger.Errorf("CalcBpGeneratedBlocksOnOnePeriod: fail to get cos observe db, the error is %v \n", err)
 		return nil,err
 	}
+	//db.LogMode(true)
 	sTabName := iservices.BlockLogTableNameForBlockHeight(start)
 	eTabName := iservices.BlockLogTableNameForBlockHeight(end)
+	sIdx := "idx_" + sTabName + "_block_height"
 	var list []*types.BpBlockStatistics
-	sql := fmt.Sprintf("select count(*) as total_count, block_producer from %v where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, start, end, 1)
+	sql := fmt.Sprintf("select count(*) as total_count, block_producer from %v FORCE INDEX(%v) where block_height > %v and block_height <= %v and final = %v GROUP BY block_producer ORDER BY total_count", sTabName, sIdx, start, end, 1)
 	if sTabName != eTabName {
 		// need select union two table
-		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select block_producer from %v where block_height > %v and block_height <= %v and final = %v union all (select block_producer from %v where block_height > %v and block_height <= %v and final = %v)) as t GROUP BY block_producer ORDER BY total_count", sTabName, start, end, 1, eTabName, start, end,1)
+		eIdx := "idx_" + eTabName + "_block_height"
+		sql = fmt.Sprintf("SELECT COUNT(*) as total_count , block_producer from (select block_producer from %v FORCE INDEX(%v) where block_height > %v and block_height <= %v and final = %v union all (select block_producer from %v FORCE INDEX(%v) where block_height > %v and block_height <= %v and final = %v)) as t GROUP BY block_producer ORDER BY total_count", sTabName, sIdx, start, end, 1, eTabName, eIdx, start, end,1)
 	}
 	err = db.Raw(sql).Scan(&list).Error
 	if err != nil {

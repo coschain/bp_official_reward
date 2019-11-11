@@ -59,30 +59,30 @@ func (s *BpSyncService) snapshot() {
 		return
 	}
 
-	//1. get official bp vote record
-	recList,err := db.GetBpVoteRecords(curTime, config.OfficialBpList)
-	if err != nil {
-		s.logger.Errorf("snapshot: Fail to get vote records of official bp on time:%v, the error is %v", err, curTime)
-		s.logger.Infoln("Finish this round snapshot")
-		//sync official bp's voter info
-		s.syncVotersAccountInfo(curTime, config.OfficialBpList)
-		return
-	} else {
-		if len(recList) > 0 {
-			// batch insert vote record to db
-			err := db.BatchInsertVoteRecord(recList)
-			if err != nil {
-				s.logger.Errorf("snapshot: Fail to batch insert official bp vote record on time:%v, the error is %v", curTime, err)
-				s.logger.Infoln("Finish this round snapshot")
-				//sync official bp's voter info
-				s.syncVotersAccountInfo(curTime, config.OfficialBpList)
-				return
-			}
-		} else {
-			s.logger.Infof("snapshot: official bp vote record is empty on time:%v", curTime)
-		}
-
-	}
+	////1. get official bp vote record
+	//recList,err := db.GetBpVoteRecords(curTime, config.OfficialBpList)
+	//if err != nil {
+	//	s.logger.Errorf("snapshot: Fail to get vote records of official bp on time:%v, the error is %v", err, curTime)
+	//	s.logger.Infoln("Finish this round snapshot")
+	//	//sync official bp's voter info
+	//	s.syncVotersAccountInfo(curTime, config.OfficialBpList)
+	//	return
+	//} else {
+	//	if len(recList) > 0 {
+	//		// batch insert vote record to db
+	//		err := db.BatchInsertVoteRecord(recList)
+	//		if err != nil {
+	//			s.logger.Errorf("snapshot: Fail to batch insert official bp vote record on time:%v, the error is %v", curTime, err)
+	//			s.logger.Infoln("Finish this round snapshot")
+	//			//sync official bp's voter info
+	//			s.syncVotersAccountInfo(curTime, config.OfficialBpList)
+	//			return
+	//		}
+	//	} else {
+	//		s.logger.Infof("snapshot: official bp vote record is empty on time:%v", curTime)
+	//	}
+	//
+	//}
 
 	//2. get bp's vote relation
 	rList,err := db.GetBpVoteRelation(curTime, config.OfficialBpList)
