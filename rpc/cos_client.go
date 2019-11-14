@@ -160,6 +160,13 @@ func (client *CosRpcClient) GetStatisticsInfo(req *grpcpb.NonParamsRequest) (*gr
 	return res, err
 }
 
+func (client *CosRpcClient) GetTop21BpList(req *grpcpb.GetBlockProducerListByVoteCountRequest) (*grpcpb.GetBlockProducerListResponse, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(client.timeout)*time.Minute)
+	defer cancel()
+	res, err := client.rpcClient.GetBlockProducerListByVoteCount(ctx, req)
+	return res, err
+}
+
 func (client *CosRpcClient) CloseConn() {
 	logger := logs.GetLogger()
 	if client.conn != nil {

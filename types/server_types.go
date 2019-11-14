@@ -20,6 +20,7 @@ const (
 	StatusGetTotalVoterCountError = 612
 	StatusGetMaxROIError = 613
 	StatusConvertRewardError = 614
+	StatusGetTop21BpListError = 614
 )
 
 type BaseResponse struct {
@@ -87,6 +88,7 @@ type EstimatedRewardInfo struct {
 	EstimatedThousandRewards string //estimated rewards per 1000 vest
 	EstimatedAnnualizedROI  string //estimated annualized rate
 	IsDistributable bool  // is support distribute
+	IsTop21  bool // is top 21 bp
 
 }
 

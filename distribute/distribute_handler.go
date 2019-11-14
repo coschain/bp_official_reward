@@ -4,6 +4,7 @@ import (
 	"bp_official_reward/config"
 	"bp_official_reward/db"
 	"bp_official_reward/logs"
+	"bp_official_reward/rpc"
 	"bp_official_reward/types"
 	"bp_official_reward/utils"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"github.com/coschain/contentos-go/app/plugins"
 	"github.com/coschain/contentos-go/common/constants"
 	"github.com/coschain/contentos-go/prototype"
+	"github.com/coschain/contentos-go/rpc/pb"
 	"github.com/robfig/cron"
 	"github.com/shopspring/decimal"
 	"github.com/sirupsen/logrus"
@@ -66,6 +68,7 @@ var (
 
 	cacheSv  *cacheService
 	isEstimating bool
+	topBpList []*grpcpb.BlockProducerResponse
 )
 
 type RewardDistributeService struct {
@@ -806,6 +809,25 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	if err != nil {
 		logger.Errorf("EstimateCurrentPeriodReward: fail to get all bp, the error is %v", err)
 	}
+    // get top 21 bp
+	rpcClient,err := rpc.CosRpcPoolInstance().GetRpcClient()
+	if err != nil {
+		logger.Errorf("EstimateCurrentPeriodReward: fail to get rpc client when get top 21 bp, the error is %v", curTime, err)
+	} else {
+		req := &grpcpb.GetBlockProducerListByVoteCountRequest{
+			Start: nil,
+			Limit: 21,
+		}
+		res,err := rpcClient.GetTop21BpList(req)
+		if err != nil {
+			logger.Errorf("EstimateCurrentPeriodReward: fail to get top 21 bp, the error is %v", curTime, err)
+		} else {
+			topBpList = res.BlockProducerList
+		}
+	}
+	if len(topBpList) < 1 {
+		return nil, errors.New("fail to get top 21 bp list"), types.StatusGetTop21BpListError
+	}
 
 	blkSta,err := db.CalcBpGeneratedBlocksOnOnePeriod(sBlkNum, eBlkNum)
 	if err != nil {
@@ -892,6 +914,12 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 			info.IsDistributable = true
 			info.EstimatedAnnualizedROI = utils.FormatFloatValue(ROI, 6)
 			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest).String()
+		}
+
+		for _,topBp := range topBpList {
+			if topBp.Owner.Value == data.BlockProducer {
+				info.IsTop21 = true
+			}
 		}
 
 		list = append(list, info)
