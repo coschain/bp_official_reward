@@ -1067,3 +1067,26 @@ func MdRewardRecord(rec *types.BpRewardRecord) error {
 	}
 	return db.Save(rec).Error
 }
+
+
+// Get official bp's gift ticket reward on block range
+func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64, prefix string) ([]*types.GiftTicketRewardInfo, error) {
+	logger := logs.GetLogger()
+	if len(prefix) < 1 {
+		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: bp name prefix is empty,block range is(start:%v,end:%v)",sBlkNum, eBlkNum)
+		return nil,errors.New("can't get gift reward with empty bp name prefix")
+	}
+	db,err := getCosObserveNodeDb()
+	db.LogMode(true)
+	if err != nil {
+		logger.Errorf("GetUserVestInfo: fail to get observe node db, the error is %v", db)
+		return nil, err
+	}
+	var rewardList []*types.GiftTicketRewardInfo
+	queryPrefix := prefix + "%-%"
+	err = db.Model(plugins.TransferRecord{}).Select("SUM(amount) as total_amount,SUBSTRING_INDEX(memo,'-',1) as bp").Where("block_height > ? AND block_height <= ? AND memo LIKE ?", sBlkNum, eBlkNum, queryPrefix).Group("bp").Scan(&rewardList).Error
+    if err != nil && err != gorm.ErrRecordNotFound {
+    	return nil, err
+	}
+	return rewardList,nil
+}

@@ -58,6 +58,7 @@ type BpRewardRecord struct {
 	TotalBlockReward string `gorm:"not null"`
 	SingleBlockReward string `gorm:"not null"`
 	SingleColdStartReward   string  `gorm:"not null"`
+	SingleBlockTicketReward  string  `gorm:"not null"`
 	TotalVoterVest   string  `gorm:"not null"`
 	CreatedBlockNumber uint64 `gorm:"not null"`
 	DistributeBlockNumber  uint64 `gorm:"not null"`
@@ -92,4 +93,8 @@ type BpBlockStatistics struct {
 	BlockProducer string
 }
 
+type GiftTicketRewardInfo struct {
+	TotalAmount uint64
+	Bp  string
+}
 

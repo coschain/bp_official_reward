@@ -46,6 +46,7 @@ type EnvConfig struct {
 	DistributeTimeInterval string `json:"distributeTimeInterval"`
 	ServiceStarPeriodBlockNum string `json:"serviceStarPeriodBlockNum"`
 	CacheTimeInterval  string `json:"cacheTimeInterval"`
+	TicketBpMemoPrefix string `json:"ticketBpMemoPrefix"`
 }
 
 type RewardConfig struct {
@@ -235,4 +236,8 @@ func GetCosChainId() uint32  {
 // get address and private key of our cos transfer account
 func GetMainNetCosSenderInfo() (addr string, privKey string) {
 	return rewardConfig.CosSenderAcct,rewardConfig.CosSenderPrivKey
+}
+
+func GetGiftRewardBpNamePrefix() string {
+	return rewardConfig.TicketBpMemoPrefix
 }

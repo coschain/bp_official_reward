@@ -69,6 +69,7 @@ var (
 	cacheSv  *cacheService
 	isEstimating bool
 	topBpList []*grpcpb.BlockProducerResponse
+
 )
 
 type RewardDistributeService struct {
@@ -81,6 +82,23 @@ type RewardDistributeService struct {
 type bpRewardInfo struct {
 	rewardRecord *types.BpRewardRecord
 	VoterList []*types.AccountInfo
+}
+
+type EstimateStatisticsInfo struct {
+	curPeriod  uint64
+	nextPeriod uint64
+	startBlock uint64
+	endBlock   uint64
+	diffBlock  uint64
+	err        error
+	errCode    int
+}
+
+type DistributeToBpResult struct {
+	rewardList []*bpRewardInfo
+	giftRewardList []*types.GiftTicketRewardInfo
+	curPeriodVotersList []*plugins.ProducerVoteRecord
+	err error
 }
 
 type cacheService struct {
@@ -259,16 +277,36 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		sv.logger.Errorf("startDistribute: not support distribute for year %v", curYear)
 		return
 	}
+	var (
+		curPeriodVotersList  []*plugins.ProducerVoteRecord
+		curPeriodGiftRewardList []*types.GiftTicketRewardInfo
+		err error
+	)
 	//1. distribute reward to bp
 	bpSingleReward := CalcSingleBlockRewardByPeriod(period)
-	bpRewardInfoList,votersList,err := sv.startDistributeToBp(period, sTime, eTime, t, bpSingleReward, *coldStartSingleReward ,startBlk, endBlk)
-	if err != nil {
-		votersList,err = db.GetAllVoterOfBlkRange(startBlk, endBlk)
+	//bpRewardInfoList,curPeriodVotersList,err := sv.startDistributeToBp(period, sTime, eTime, t, bpSingleReward, *coldStartSingleReward ,startBlk, endBlk)
+	res := sv.startDistributeToBp(period, sTime, eTime, t, bpSingleReward, *coldStartSingleReward ,startBlk, endBlk)
+
+	if res.err != nil {
+		curPeriodVotersList,err = db.GetAllVoterOfBlkRange(startBlk, endBlk)
 		if err != nil {
-			sv.logger.Errorf("startDistribute: fail to get all vote records of block range(start:%v,end:%v), the error is %v", startBlk, endBlk, err)
+			sv.logger.Errorf("startDistribute: fail to get all vote records of block range(start:%v,end:%v) on period:%v, the error is %v", startBlk, endBlk, period, err)
+			return
+		}
+		//need to calculate official bp's gift reward
+		curPeriodGiftRewardList,err = db.GetGiftRewardOfOfficialBpOnRange(startBlk, endBlk, config.GetGiftRewardBpNamePrefix())
+		if err != nil {
+			sv.logger.Errorf("startDistribute: fail to get all gift reward of block range(start:%v,end:%v) on period:%v, the error is %v", startBlk, endBlk, period, err)
 			return
 		}
 	}
+
+	// get gift ticket reward
+	//giftRewards,err := db.GetGiftRewardOfOfficialBpOnRange(startBlk, endBlk, config.GetGiftRewardBpNamePrefix())
+	//if err != nil {
+	//	sv.logger.Errorf("startDistribute: fail to get gift ticket reward of block range(start:%v,end:%v), the error is %v", startBlk, endBlk, err)
+	//	return
+	//}
 	//2. distribute reward to all voters
 	for _,bp := range config.OfficialBpList {
 		sv.logger.Infof("startDistribute: single block reward of year:%v is %v", curYear, coldStartSingleReward.String())
@@ -282,9 +320,9 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		isNeedCalcBlocks := true
 		isBlkCntValid := true
 		isNeedCalcTotalVest := true
-		if len(bpRewardInfoList) > 0 {
+		if len(res.rewardList) > 0 {
 			// get blocks count from bpBlkInfoList directly
-			for _,info := range bpRewardInfoList {
+			for _,info := range res.rewardList {
 				bpReward := info.rewardRecord
 				if bpReward.Bp == bp {
 					generatedBlkNum = bpReward.CreatedBlockNumber
@@ -310,7 +348,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		}
 		//calculate all voter's total vest of bp
 		if isNeedCalcTotalVest {
-			voterList,err = db.GetAllRewardedVotersOfPeriodByBp(bp, sTime.Unix(), eTime.Unix(), startBlk, endBlk, votersList)
+			voterList,err = db.GetAllRewardedVotersOfPeriodByBp(bp, sTime.Unix(), eTime.Unix(), startBlk, endBlk, curPeriodVotersList)
 			if err != nil {
 				sv.logger.Errorf("startDistribute: Fail to get all voters who can get reward from bp:%v, the error is %v", bp, err)
 				continue
@@ -325,6 +363,10 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 				sv.logger.Infof("startDistribute: generated block of bp:%v is %v", bp, generatedBlkNum)
 				//calculate total block reward of this bp
 				totalReward := calcTotalRewardOfBpOnOnePeriod(*coldStartSingleReward, generatedBlkNum)
+				//add gift reward
+				giftReward := getGiftRewardAmountOfBp(bp, curPeriodGiftRewardList)
+			    sv.logger.Infof("startDistribute: gift reward of bp:%v is %v", bp, giftReward.String())
+				totalReward = totalReward.Add(giftReward)
 				sv.logger.Infof("startDistribute: total block reward of bp:%v is %v", bp, totalReward.String())
 				//calculate actually distributed rewards (total reward * rate)
 				distributeReward := totalReward
@@ -363,7 +405,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 						TotalVoterVest: totalVest.String(),
 						CreatedBlockNumber: generatedBlkNum,
 						DistributeBlockNumber: endBlk,
-						AnnualizedRate: calcAnnualizedROI(generatedBlkNum, *coldStartSingleReward, RewardRate, totalVest.String()),
+						AnnualizedRate: calcAnnualizedROIByTotalReward(totalReward, RewardRate, totalVest.String()),
 					}
 					disType := TransferTypePending
 					if bigVal.Uint64() < utils.MinVoterDistributeVest {
@@ -382,13 +424,15 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 //
 // distribute reward to all bp that have generated blocks successfully
 //
-func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.Time, eTime time.Time, distributeTime time.Time, singleBlkReward decimal.Decimal, singleBlkColdStartReward decimal.Decimal, startBlk uint64, endBlk uint64) ([]*bpRewardInfo, []*plugins.ProducerVoteRecord, error){
+func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.Time, eTime time.Time, distributeTime time.Time, singleBlkReward decimal.Decimal, singleBlkColdStartReward decimal.Decimal, startBlk uint64, endBlk uint64) (*DistributeToBpResult){
 	sv.logger.Infof("startDistributeToBp: start distribute reward to bp on block range(from:%v,to:%v)", startBlk, endBlk)
+	result := &DistributeToBpResult{}
 	//1. calculate all bp's total generated blocks
 	statistics,err := db.CalcBpGeneratedBlocksOnOnePeriod(startBlk, endBlk)
 	if err != nil {
 		sv.logger.Errorf("startDistributeToBp: fail to calculate bp block statistics on period:%v , the error is %v", period ,err)
-		return nil, nil, err
+		result.err =  err
+		return result
 	}
 	count := len(statistics)
 	eTimeStamp := eTime.Unix()
@@ -401,18 +445,32 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 
 	if count < 1 {
 		sv.logger.Errorf("startDistributeToBp: block statistics is empty on period:%v", period)
+		result.err = errors.New("block data of current period is empty")
+		return result
 	} else {
 		sv.logDistributeBpInfo(period, statistics)
 		// get all voter records of current period
 		curPeriodVoters,err = db.GetAllVoterOfBlkRange(startBlk, endBlk)
 		if err != nil {
 			sv.logger.Errorf("startDistributeToBp: fail to get all vote records of block range(start:%v,end:%v), the error is %v", startBlk, endBlk, err)
-			return nil, nil, errors.New("fail to get voter record")
+			result.err = errors.New("fail to get voter record")
+			return result
 		}
+
+		// get gift ticket reward
+		giftTicketRewardList,err := db.GetGiftRewardOfOfficialBpOnRange(startBlk, endBlk, config.GetGiftRewardBpNamePrefix())
+		if err != nil {
+			sv.logger.Errorf("startDistribute: fail to get gift ticket reward of block range(start:%v,end:%v), the error is %v", startBlk, endBlk, err)
+			result.err = errors.New("fail to get gift reward")
+			return result
+		}
+
 		for _,data := range statistics {
 			// calculate total reward of bp(cold start + ecological reward)
 			totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
-			sv.logger.Infof("startDistributeToBp: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
+			giftReward := getGiftRewardAmountOfBp(data.BlockProducer, giftTicketRewardList)
+			totalAmount = totalAmount.Add(giftReward)
+			sv.logger.Infof("startDistributeToBp: bp:%v's gift reward is %v, block reward is %v", data.BlockProducer, giftReward.String(), totalAmount.String())
 			//we just distribute cold start reward for bp,because Ecological Reward distributed by cos chain
 			distributeReward := calcTotalRewardOfBpOnOnePeriod(singleBlkColdStartReward, data.TotalCount)
 			distributeRewardStr := distributeReward.String()
@@ -452,7 +510,7 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 				TotalVoterVest: totalVest.String(),
 				CreatedBlockNumber: data.TotalCount,
 				DistributeBlockNumber: endBlk,
-				AnnualizedRate: calcAnnualizedROI(data.TotalCount, singleBlkReward, RewardRate, totalVest.String()) ,
+				AnnualizedRate: calcAnnualizedROI(data.TotalCount, singleBlkReward, RewardRate, totalVest.String(), giftReward) ,
 			}
 			bpInfo := &bpRewardInfo{
 				rewardRecord: rec,
@@ -470,8 +528,13 @@ func (sv *RewardDistributeService) startDistributeToBp(period uint64,sTime time.
 			}
 
 		}
+		result.rewardList = list
+		result.curPeriodVotersList = curPeriodVoters
+		result.giftRewardList = giftTicketRewardList
 	}
-    return list,curPeriodVoters,nil
+
+	result.err = nil
+    return result
 
 }
 
@@ -720,25 +783,24 @@ func GetBpRewardHistory(period int) ([]*types.RewardInfo, error, int) {
 			rewardInfo.EndBlockTime =  strconv.FormatInt(periodBlkInfo.EndBlockTime, 10)
 			rewardInfo.DistributeTime = strconv.FormatInt(periodBlkInfo.DistributeTime, 10)
 			for _,rec := range bpRewardList {
-				singleReward,err := decimal.NewFromString(rec.SingleBlockReward)
+				totalReward,err := decimal.NewFromString(rec.TotalBlockReward)
 				if err != nil {
-					logger.Errorf("GetBpRewardHistory: fail to convert single block reward:%v to decimal, the error is %v", rec.SingleBlockReward, err)
+					logger.Errorf("GetBpRewardHistory: fail to convert total block reward:%v to decimal, the error is %v", rec.TotalBlockReward, err)
 					return nil,err, types.StatusConvertRewardError
 				}
-				annualizedInfo := getAnnualizedInfoByRewardRec(rec)
 				record := &types.RewardRecord {
 					IsDistributable: CheckIsDistributableBp(rec.Bp),
 					BpName: rec.Bp,
 					GenBlockCount: strconv.FormatUint(rec.CreatedBlockNumber, 10),
-					TotalReward: annualizedInfo.TotalReward,
+					TotalReward: rec.TotalBlockReward,
 					VotersVest: rec.TotalVoterVest,
 
 				}
 				if CheckIsDistributableBp(rec.Bp) {
 					//record.RewardRate = utils.FormatFloatValue(RewardRate, 2)
 					record.RewardRate = BpRewarRate
-					record.EveryThousandRewards = calcEveryThousandReward(rec.CreatedBlockNumber, singleReward, RewardRate, rec.TotalVoterVest).String()
-					record.AnnualizedROI = utils.FormatFloatValue(calcAnnualizedROI(rec.CreatedBlockNumber, singleReward, RewardRate,rec.TotalVoterVest), 6)
+					record.EveryThousandRewards = calcEveryThousandRewardByTotalReward(totalReward, RewardRate, rec.TotalVoterVest).String()
+					record.AnnualizedROI = utils.FormatFloatValue(calcAnnualizedROIByTotalReward(totalReward, RewardRate,rec.TotalVoterVest), 6)
 				}
 				recList = append(recList, record)
 			}
@@ -775,34 +837,15 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 	}()
 	curTime := time.Now().Unix()
 	logger.Infof("EstimateCurrentPeriodReward: estimate current period reward on time: %v", curTime)
-	lib,err := db.GetLib()
-	if err != nil {
-		logger.Errorf("EstimateCurrentPeriodReward: fail to get latest lib on time %v, the error is %v", curTime, err)
-		return nil, errors.New("fail to get latest lib"), types.StatusGetLibError
-	}
-	latestPeriod,err := db.GetLatestDistributedPeriod(true)
-	if err != nil {
-		logger.Errorf("EstimateCurrentPeriodReward: fail to get latest distribute period on time %v, the error is %v", curTime, err)
-		return nil, errors.New("fail to get latest period"), types.StatusGetLatestPeriodError
-	}
-	eBlkNum := lib
-	curPeriod := GetPeriodByBlockNum(lib)
-	nextPeriod := curPeriod + 1
-	sBlkNum := getStartBlockNumByPeriod(nextPeriod)
-	diffBlk := lib - sBlkNum
-	if lib < config.ServiceStarPeriodBlockNum {
-		if config.ServiceStarPeriodBlockNum > config.DistributeInterval {
-			sBlkNum = config.ServiceStarPeriodBlockNum - config.DistributeInterval
-			diffBlk = lib - sBlkNum
-		}
-	} else if latestPeriod + 1 < nextPeriod {
-		curPeriod = latestPeriod
-		nextPeriod = curPeriod + 1
-		sBlkNum = getStartBlockNumByPeriod(nextPeriod)
-		eBlkNum = sBlkNum + config.DistributeInterval
-		diffBlk = config.DistributeInterval
-	}
 
+	sInfo := fetchEstimateStatisticsInfo("EstimateCurrentPeriodReward")
+	if sInfo.err != nil {
+		return nil, sInfo.err, sInfo.errCode
+	}
+	sBlkNum := sInfo.startBlock
+	eBlkNum := sInfo.endBlock
+	diffBlk := sInfo.diffBlock
+	nextPeriod := sInfo.nextPeriod
 	logger.Infof("EstimateCurrentPeriodReward: estimate bp reward of next period %v , start block number is %v, end block number is %v, diff block number is %v", nextPeriod, sBlkNum, eBlkNum, eBlkNum-sBlkNum)
     // get all bp on chain
     allBpList,err := db.GetAllBpFromChain()
@@ -812,7 +855,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
     // get top 21 bp
 	rpcClient,err := rpc.CosRpcPoolInstance().GetRpcClient()
 	if err != nil {
-		logger.Errorf("EstimateCurrentPeriodReward: fail to get rpc client when get top 21 bp, the error is %v", curTime, err)
+		logger.Errorf("EstimateCurrentPeriodReward: fail to get rpc client when get top 21 bp on time:%v, the error is %v", curTime, err)
 	} else {
 		req := &grpcpb.GetBlockProducerListByVoteCountRequest{
 			Start: nil,
@@ -820,7 +863,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		}
 		res,err := rpcClient.GetTop21BpList(req)
 		if err != nil {
-			logger.Errorf("EstimateCurrentPeriodReward: fail to get top 21 bp, the error is %v", curTime, err)
+			logger.Errorf("EstimateCurrentPeriodReward: fail to get top 21 bp on time %v, the error is %v", curTime, err)
 		} else {
 			topBpList = res.BlockProducerList
 		}
@@ -873,11 +916,15 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		blkSta = append(blkSta, notGenBlkBpList...)
 	}
 	for _,data := range blkSta {
+		bpName := data.BlockProducer
 		info := &types.EstimatedRewardInfo{
-			BpName: data.BlockProducer,
+			BpName: bpName,
 			GenBlockCount: strconv.FormatUint(data.TotalCount, 10),
 			IsDistributable: false,
 		}
+
+		giftRewardAmount := getGiftRewardAmountOfBp(bpName, giftRewardList)
+		logger.Infof("EstimateCurrentPeriodReward: gift reward of bp:%v is %v", bpName, giftRewardAmount.String())
 		totalAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 		info.AccumulatedReward = totalAmount.String()
 		logger.Infof("EstimateCurrentPeriodReward: total block reward of bp:%v is %v", data.BlockProducer, totalAmount.String())
@@ -905,15 +952,17 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		bigEstimateNum := new(big.Int)
 		bigEstimateNum.SetString(estimatedBlkNum.String(), 10)
 		estimatedReward := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, bigEstimateNum.Uint64())
+		//add gift reward
+		estimatedReward = estimatedReward.Add(giftRewardAmount)
 		info.EstimatedTotalReward = estimatedReward.String()
-		ROI := calcAnnualizedROI(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest)
+		ROI := calcAnnualizedROI(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount)
 
 		if isDistributable {
 			//info.RewardRate = utils.FormatFloatValue(rewardRate, 2)
 			info.RewardRate = BpRewarRate
 			info.IsDistributable = true
 			info.EstimatedAnnualizedROI = utils.FormatFloatValue(ROI, 6)
-			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest).String()
+			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount).String()
 		}
 
 		for _,topBp := range topBpList {
@@ -928,7 +977,7 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 
 	rewardInfo.List = list
 	sort.Sort(rewardInfo)
-	logger.Infof("EstimateCurrentPeriodReward: finish estimate current period:%v", curPeriod)
+	logger.Infof("EstimateCurrentPeriodReward: finish estimate next period:%v", nextPeriod)
 	return rewardInfo, nil, types.StatusSuccess
 }
 
@@ -973,51 +1022,42 @@ func GetHistoricalVotingData() (*types.HistoricalVotingData, error, int) {
 
 }
 
-func getAnnualizedInfoByRewardRec(rec *types.BpRewardRecord) *types.AnnualizedInfo {
-	info := &types.AnnualizedInfo{
-		IsDistributable: false,
-	}
-	//single block reward contain cold start and ecological reward
-	singleBlkReward := CalcSingleBlockRewardByPeriod(rec.Period)
-	for _,bp := range config.OfficialBpList {
-		totalBlkNum := rec.CreatedBlockNumber
-		totalReward :=  calcTotalRewardOfBpOnOnePeriod(singleBlkReward, totalBlkNum)
-		thousandReward := calcEveryThousandReward(totalBlkNum, singleBlkReward,  rec.RewardRate, rec.TotalVoterVest)
-		info.TotalReward = totalReward.String()
-		info.RewardRate =  utils.FormatFloatValue(rec.RewardRate, 2)
-		info.EveryThousandRewards = thousandReward.String()
-		if bp == rec.Bp {
-			ROI := calcAnnualizedROI(totalBlkNum, singleBlkReward,  rec.RewardRate, rec.TotalVoterVest)
-			info.IsDistributable = true
-			info.AnnualizedROI = utils.FormatFloatValue(ROI, 6)
-		}
-	}
-	return info
-}
 
 //calculate Every Thousand VEST Reward
-func calcEveryThousandReward(totalBlkNum uint64, singleBlkReward decimal.Decimal, rewardRate float64, totalVest string) decimal.Decimal{
-	//calculate total reward
+func calcEveryThousandReward(totalBlkNum uint64, singleBlkReward decimal.Decimal, rewardRate float64, totalVest string, giftReward decimal.Decimal) decimal.Decimal{
+	//calculate total cold start reward
 	totalReward :=  calcTotalRewardOfBpOnOnePeriod(singleBlkReward, totalBlkNum)
-    //EveryThousandReward = totalReward * rate * 1000 / totalVest
-    vestDecimal,_ := decimal.NewFromString(totalVest)
+	//add gift reward
+	totalReward = totalReward.Add(giftReward)
+    return calcEveryThousandRewardByTotalReward(totalReward, rewardRate, totalVest)
+}
+
+func calcEveryThousandRewardByTotalReward(totalReward decimal.Decimal, rewardRate float64, totalVest string) decimal.Decimal {
+	//EveryThousandReward = totalReward * rate * 1000 / totalVest
+	vestDecimal,_ := decimal.NewFromString(totalVest)
 	if vestDecimal.Cmp(decimal.New(0, 0)) <= 0 {
 		return decimal.New(0, 0)
 	}
-    rateDecimal := decimal.NewFromFloat(rewardRate)
+	rateDecimal := decimal.NewFromFloat(rewardRate)
 
 	thousandReward,_ := totalReward.Mul(rateDecimal).Mul(decimal.New(1000, 0)).QuoRem(vestDecimal, 6)
-    return thousandReward
+	return thousandReward
 }
 
+
 //calculate Annualized ROI
-func calcAnnualizedROI(totalBlkNum uint64, singleBlkReward decimal.Decimal, rewardRate float64, totalVest string) float64 {
-    // ROI = totalReward * rate * 86400 * 365 / totalVest
+func calcAnnualizedROI(totalBlkNum uint64, singleBlkReward decimal.Decimal, rewardRate float64, totalVest string, giftReward decimal.Decimal) float64 {
+	totalReward :=  calcTotalRewardOfBpOnOnePeriod(singleBlkReward, totalBlkNum)
+	//add gift reward
+	totalReward = totalReward.Add(giftReward)
+	return calcAnnualizedROIByTotalReward(totalReward, rewardRate, totalVest)
+}
+
+func calcAnnualizedROIByTotalReward(totalReward decimal.Decimal, rewardRate float64, totalVest string) float64 {
 	vestDecimal,_ := decimal.NewFromString(totalVest)
 	if vestDecimal.Cmp(decimal.New(0, 0)) <= 0 {
 		return 1.0
 	}
-	totalReward :=  calcTotalRewardOfBpOnOnePeriod(singleBlkReward, totalBlkNum)
 	rateDecimal := decimal.NewFromFloat(rewardRate)
 	//single bp generated number = 86400 * 365/21
 	ROI,_ := totalReward.Mul(rateDecimal).Mul(decimal.New(YearDay, 0)).QuoRem(vestDecimal.Mul(decimal.New(7, 0)), 6)
@@ -1061,3 +1101,59 @@ func CheckIsDistributableBp(bpName string) bool {
 	return false
 }
 
+func getGiftRewardAmountOfBp(bp string, rewardList []*types.GiftTicketRewardInfo) decimal.Decimal {
+	amount := decimal.New(0,0)
+	for _,info := range rewardList {
+		if info.Bp == bp {
+			bigValue := new(big.Int).SetUint64(info.TotalAmount)
+			originAmount := decimal.NewFromBigInt(bigValue, 0)
+			actualAmount,_ := originAmount.QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
+			return actualAmount
+		}
+	}
+	return amount
+}
+
+func fetchEstimateStatisticsInfo(logPrefix string) *EstimateStatisticsInfo {
+	logger := logs.GetLogger()
+	info := &EstimateStatisticsInfo{}
+	curTime := time.Now().Unix()
+	logger.Infof("%v: estimate current period reward on time: %v", logPrefix, curTime)
+	lib,err := db.GetLib()
+	if err != nil {
+		logger.Errorf("%v: fail to get latest lib on time %v, the error is %v", logPrefix, curTime, err)
+		info.err = errors.New("fail to get latest lib")
+		info.errCode = types.StatusGetLibError
+		return info
+	}
+	latestPeriod,err := db.GetLatestDistributedPeriod(true)
+	if err != nil {
+		logger.Errorf("%v: fail to get latest distribute period on time %v, the error is %v", logPrefix, curTime, err)
+		info.err = errors.New("fail to get latest period")
+		info.errCode = types.StatusGetLatestPeriodError
+		return info
+	}
+	eBlkNum := lib
+	curPeriod := GetPeriodByBlockNum(lib)
+	nextPeriod := curPeriod + 1
+	sBlkNum := getStartBlockNumByPeriod(nextPeriod)
+	diffBlk := lib - sBlkNum
+	if lib < config.ServiceStarPeriodBlockNum {
+		if config.ServiceStarPeriodBlockNum > config.DistributeInterval {
+			sBlkNum = config.ServiceStarPeriodBlockNum - config.DistributeInterval
+			diffBlk = lib - sBlkNum
+		}
+	} else if latestPeriod + 1 < nextPeriod {
+		curPeriod = latestPeriod
+		nextPeriod = curPeriod + 1
+		sBlkNum = getStartBlockNumByPeriod(nextPeriod)
+		eBlkNum = sBlkNum + config.DistributeInterval
+		diffBlk = config.DistributeInterval
+	}
+	info.startBlock = sBlkNum
+	info.endBlock = eBlkNum
+	info.diffBlock = diffBlk
+	info.curPeriod = curPeriod
+	info.nextPeriod = nextPeriod
+	return info
+}

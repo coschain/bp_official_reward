@@ -78,11 +78,12 @@ func startService(cmd *cobra.Command, args []string)  {
 	}
 	checkSv := check.NewRewardResultChecker()
 	checkSv.StartCheck()
+	distribute.StartGiftTicketCheckService()
 	defer func() {
 		snapshotSv.StopSyncService()
 		distributeSv.StopDistributeService()
 		checkSv.StopCheck()
-
+		distribute.CloseGiftTicketCheckService()
 
 	}()
 	//start http service
