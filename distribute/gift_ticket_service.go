@@ -1,7 +1,6 @@
 package distribute
 
 import (
-	"bp_official_reward/config"
 	"bp_official_reward/db"
 	"bp_official_reward/logs"
 	"bp_official_reward/types"
@@ -71,9 +70,7 @@ func (sv *GiftTicketCheckService) checkGiftReward()  {
 }
 
 func fetchLatestGiftRewardInfo(sBlkNum,eBlkNum uint64) ([]*types.GiftTicketRewardInfo,error) {
-	prefix := config.GetGiftRewardBpNamePrefix()
-
-	list,err := db.GetGiftRewardOfOfficialBpOnRange(sBlkNum, eBlkNum, prefix)
+	list,err := db.GetGiftRewardOfOfficialBpOnRange(sBlkNum, eBlkNum)
 	if err != nil {
 		return nil,err
 	}

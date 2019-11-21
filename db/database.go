@@ -1070,22 +1070,29 @@ func MdRewardRecord(rec *types.BpRewardRecord) error {
 
 
 // Get official bp's gift ticket reward on block range
-func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64, prefix string) ([]*types.GiftTicketRewardInfo, error) {
+func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64) ([]*types.GiftTicketRewardInfo, error) {
 	logger := logs.GetLogger()
+	prefix := config.GetGiftRewardBpNamePrefix()
+	receiveAcct := config.GetTicketRewardReveiceAccount()
 	if len(prefix) < 1 {
 		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: bp name prefix is empty,block range is(start:%v,end:%v)",sBlkNum, eBlkNum)
 		return nil,errors.New("can't get gift reward with empty bp name prefix")
 	}
+    if len(receiveAcct) < 1 {
+		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: ticket reward deposit account is empty,block range is(start:%v,end:%v)",sBlkNum, eBlkNum)
+		return nil,errors.New("can't get gift reward with empty ticket reward deposit account")
+	}
 	db,err := getCosObserveNodeDb()
-	db.LogMode(true)
 	if err != nil {
 		logger.Errorf("GetUserVestInfo: fail to get observe node db, the error is %v", db)
 		return nil, err
 	}
 	var rewardList []*types.GiftTicketRewardInfo
 	queryPrefix := prefix + "%-%"
-	err = db.Model(plugins.TransferRecord{}).Select("SUM(amount) as total_amount,SUBSTRING_INDEX(memo,'-',1) as bp").Where("block_height > ? AND block_height <= ? AND memo LIKE ?", sBlkNum, eBlkNum, queryPrefix).Group("bp").Scan(&rewardList).Error
-    if err != nil && err != gorm.ErrRecordNotFound {
+
+	err = db.Model(plugins.TransferRecord{}).Select("SUM(amount) as total_amount,SUBSTRING_INDEX(memo,'-',1) as bp").Where("block_height > ? AND block_height <= ? AND `to` = ? AND memo LIKE ?", sBlkNum, eBlkNum, receiveAcct, queryPrefix).Group("bp").Scan(&rewardList).Error
+
+	if err != nil && err != gorm.ErrRecordNotFound {
     	return nil, err
 	}
 	return rewardList,nil

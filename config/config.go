@@ -47,6 +47,7 @@ type EnvConfig struct {
 	ServiceStarPeriodBlockNum string `json:"serviceStarPeriodBlockNum"`
 	CacheTimeInterval  string `json:"cacheTimeInterval"`
 	TicketBpMemoPrefix string `json:"ticketBpMemoPrefix"`
+	TicketReceiveAccount string `json:"ticketReceiveAccount"`
 }
 
 type RewardConfig struct {
@@ -238,6 +239,12 @@ func GetMainNetCosSenderInfo() (addr string, privKey string) {
 	return rewardConfig.CosSenderAcct,rewardConfig.CosSenderPrivKey
 }
 
+// Get prefix of transfer memo in a ticket reward transfer
 func GetGiftRewardBpNamePrefix() string {
 	return rewardConfig.TicketBpMemoPrefix
 }
+
+func GetTicketRewardReveiceAccount() string {
+	return rewardConfig.TicketReceiveAccount
+}
+
