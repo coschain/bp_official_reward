@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	cosUtil "github.com/coschain/contentos-go/common"
+	"github.com/coschain/contentos-go/prototype"
 	"io/ioutil"
 	"strconv"
 	"sync"
-	cosUtil "github.com/coschain/contentos-go/common"
 )
 
 const (
@@ -126,6 +127,14 @@ func LoadRewardConfig(path string) error {
 				return errors.New(fmt.Sprintf("fail to convert CacheTimeInterval:%v to int64, the error is %v", rewardConfig.ServiceStarPeriodBlockNum, err))
 			}
 			OfficialBpList = rewardConfig.RewardBpList
+
+			if len(rewardConfig.TicketReceiveAccount) < 1 || !CheckCosAccountIsValid(rewardConfig.TicketReceiveAccount){
+				return errors.New("ticket receive account is invalid")
+			}
+
+			if len(rewardConfig.TicketBpMemoPrefix) < 1 {
+				return errors.New("ticket gift transfer memo prefix is invalid")
+			}
 		}
 	}
 	return nil
@@ -244,7 +253,14 @@ func GetGiftRewardBpNamePrefix() string {
 	return rewardConfig.TicketBpMemoPrefix
 }
 
-func GetTicketRewardReveiceAccount() string {
+func GetTicketRewardReceiveAccount() string {
 	return rewardConfig.TicketReceiveAccount
 }
 
+func CheckCosAccountIsValid(addr string) bool {
+	acct := prototype.AccountName{Value: addr}
+	if err := acct.Validate(); err != nil {
+		return false
+	}
+	return true
+}

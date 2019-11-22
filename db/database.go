@@ -954,7 +954,7 @@ func GetAllBpFromChain() ([]*plugins.ProducerVoteState,error) {
 	logger := logs.GetLogger()
 	db, err := getCosObserveNodeDb()
 	if err != nil {
-		logger.Errorf("CalcBpGeneratedBlocksOnOnePeriod: fail to get cos observe db, the error is %v \n", err)
+		logger.Errorf("GetAllBpFromChain: fail to get cos observe db, the error is %v \n", err)
 		return nil,err
 	}
 	var list []*plugins.ProducerVoteState
@@ -1073,7 +1073,7 @@ func MdRewardRecord(rec *types.BpRewardRecord) error {
 func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64) ([]*types.GiftTicketRewardInfo, error) {
 	logger := logs.GetLogger()
 	prefix := config.GetGiftRewardBpNamePrefix()
-	receiveAcct := config.GetTicketRewardReveiceAccount()
+	receiveAcct := config.GetTicketRewardReceiveAccount()
 	if len(prefix) < 1 {
 		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: bp name prefix is empty,block range is(start:%v,end:%v)",sBlkNum, eBlkNum)
 		return nil,errors.New("can't get gift reward with empty bp name prefix")
@@ -1088,9 +1088,9 @@ func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64) ([]*types.GiftTick
 		return nil, err
 	}
 	var rewardList []*types.GiftTicketRewardInfo
-	queryPrefix := prefix + "%-%"
+	queryPrefix := prefix + "[1-9][0-9]*-[1-9][0-9]*$"
 
-	err = db.Model(plugins.TransferRecord{}).Select("SUM(amount) as total_amount,SUBSTRING_INDEX(memo,'-',1) as bp").Where("block_height > ? AND block_height <= ? AND `to` = ? AND memo LIKE ?", sBlkNum, eBlkNum, receiveAcct, queryPrefix).Group("bp").Scan(&rewardList).Error
+	err = db.Model(plugins.TransferRecord{}).Select("SUM(amount) as total_amount,SUBSTRING_INDEX(memo,'-',1) as bp").Where("block_height > ? AND block_height <= ? AND `to` = ? AND memo REGEXP ?", sBlkNum, eBlkNum, receiveAcct, queryPrefix).Group("bp").Scan(&rewardList).Error
 
 	if err != nil && err != gorm.ErrRecordNotFound {
     	return nil, err

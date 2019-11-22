@@ -300,6 +300,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		}
 	} else {
 		curPeriodGiftRewardList = res.giftRewardList
+		curPeriodVotersList = res.curPeriodVotersList
 	}
 
 	// get gift ticket reward
@@ -968,8 +969,11 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		bigEstimateNum := new(big.Int)
 		bigEstimateNum.SetString(estimatedBlkNum.String(), 10)
 		estimatedBlkReward := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, bigEstimateNum.Uint64())
+		estimatedTotalReward := estimatedBlkReward
 		//add gift reward
-		estimatedTotalReward := estimatedBlkReward.Add(giftRewardAmount)
+		if isDistributable {
+			estimatedTotalReward = estimatedBlkReward.Add(giftRewardAmount)
+		}
 		info.EstimatedTotalReward = estimatedTotalReward.String()
 		logger.Infof("EstimateCurrentPeriodReward: bp:%v's estimate total reward is %v, block reward is %v, gift reward is %v", bpName, estimatedTotalReward.String(), estimatedBlkReward.String(), giftRewardAmount.String())
 		ROI := calcAnnualizedROI(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount)
