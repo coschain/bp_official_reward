@@ -14,6 +14,7 @@ var rootCmd = &cobra.Command{
 func addCommands() {
 	rootCmd.AddCommand(command.StartCmd())
 	rootCmd.AddCommand(command.AutoSendCmd())
+	rootCmd.AddCommand(command.ReprocessCmd())
 }
 
 func main()  {

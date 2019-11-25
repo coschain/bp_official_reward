@@ -41,6 +41,7 @@ type EnvConfig struct {
 	LogPath         string    `json:"logPath"`
 	BlockLogDbList  []BlockLogDbInfo `json:"blockLogDbList"`
 	FailDistributeFilePath string `json:"failDistributeFilePath"`
+	ReprocessFilePath string `json:"reprocessFilePath"`
 	RewardBpList  []string    `json:"rewardBpList"`
 	SnapshotInterval string `json:"snapshotInterval"`
 	DistributeInterval string `json:"distributeInterval"`
@@ -181,6 +182,12 @@ func GetFailDistributeFilePath() string {
 	return ""
 }
 
+func GetReprocessFilePath() string {
+	if rewardConfig != nil {
+		return rewardConfig.ReprocessFilePath
+	}
+	return ""
+}
 
 // get cos observe node database config list
 func GetCosObserveNodeDbConfigList() ([]*DbConfig, error) {

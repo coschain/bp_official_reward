@@ -666,7 +666,6 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 		infoList []*types.AccountInfo
 		finalList []*types.AccountInfo
 	)
-
 	//get all vote record from observe db
 	joinSql := fmt.Sprintf("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > %v AND time <= %v AND bp_vote_relations.producer = '%v') as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName)
 	voterFilter := "''"
@@ -1096,4 +1095,65 @@ func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64) ([]*types.GiftTick
     	return nil, err
 	}
 	return rewardList,nil
+}
+
+func CheckOnePeriodIsDistribute(period uint64) (bool,error) {
+	log := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		log.Errorf("CheckOnePeriodIsDistribute: fail to get db,the error is %v", err)
+		return false,err
+	}
+	var cnt int
+	err = db.Model(types.BpRewardRecord{}).Select("count(*)").Where("period = ?", period).Row().Scan(&cnt)
+	if err != nil && err != gorm.ErrRecordNotFound{
+		return false,err
+	}
+	isDistribute := false
+	if cnt > 0 {
+		isDistribute = true
+	}
+	return isDistribute,nil
+}
+
+func CheckOnePeriodBpOrVoterIsDistribute(isToBp bool,period uint64) (bool,error)  {
+	log := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		log.Errorf("CheckOnePeriodBpOrVoterIsDistribute: fail to get db,the error is %v", err)
+		return false,err
+	}
+	var cnt int
+	filter := fmt.Sprintf("period = %v AND reward_type = %v", period, types.RewardTypeToVoter)
+	if isToBp {
+		filter = fmt.Sprintf("period = %v AND reward_type = %v", period, types.RewardTypeToBp)
+	}
+
+	err = db.Model(types.BpRewardRecord{}).Select("count(*)").Where(filter).Row().Scan(&cnt)
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return false,err
+	}
+	isDistribute := false
+	if cnt > 0 {
+		isDistribute = true
+	}
+	return isDistribute,nil
+}
+
+func GetRewardRecordById(id string) (*types.BpRewardRecord,error) {
+	log := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		log.Errorf("GetRewardRecordById: fail to get db,the error is %v", err)
+		return nil,err
+	}
+	var rec types.BpRewardRecord
+	err = db.Model(types.BpRewardRecord{}).Where("id = ?", id).Find(&rec).Error
+	if err != nil {
+		if err != gorm.ErrRecordNotFound {
+			log.Errorf("GetRewardRecordById: fail to get db,the error is %v", err)
+			return nil, err
+		}
+	}
+	return &rec,nil
 }
