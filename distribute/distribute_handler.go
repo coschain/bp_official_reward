@@ -402,7 +402,7 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 				distributeReward = blockReward.Add(giftReward)
 			}
 			distributeRewardStr := distributeReward.String()
-			sv.logger.Infof("startDistributeToBp: bp:%v's total reward is %v, gift reward is %v, block reward is %v", data.BlockProducer, totalAmount,giftReward.String(), totalAmount.String())
+			sv.logger.Infof("startDistributeToBp: bp:%v's total reward is %v, gift reward is %v, block reward is %v", data.BlockProducer, totalAmount,giftReward.String(), blockAmount.String())
 			sv.logger.Infof("startDistributeToBp: actual distribute total reward to bp:%v is %v, block reward is %v, gift reward is %v", data.BlockProducer, distributeRewardStr, blockReward.String(), giftReward.String())
 			// Multiply COSTokenDecimals
 			distributeReward = distributeReward.Mul(decimal.NewFromFloat(constants.COSTokenDecimals))
@@ -463,6 +463,7 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 		result.rewardList = list
 		result.curPeriodVotersList = curPeriodVoters
 		result.giftRewardList = giftTicketRewardList
+
 	}
 
 	result.err = nil
@@ -537,7 +538,7 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 			//add gift reward
 			giftReward := getGiftRewardAmountOfBp(bp, curPeriodGiftRewardList)
 			totalReward := blockReward.Add(giftReward)
-			sv.logger.Infof("startDistribute: total reward is %v, block reward is %v, gift reward of bp:%v is %v", bp, totalReward, blockReward, giftReward.String())
+			sv.logger.Infof("startDistribute: total reward is %v, block reward is %v, gift reward of bp:%v is %v", totalReward, blockReward, bp,giftReward.String())
 
 			//calculate actually distributed rewards (total reward * rate)
 			distributeReward := totalReward
