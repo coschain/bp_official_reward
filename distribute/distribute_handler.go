@@ -244,7 +244,6 @@ func (sv *RewardDistributeService) handleDistribute()  {
 		if err != nil {
 			sv.logger.Errorf("handleDistribute: fail to get latest distributed period, the error is %v", err)
 			sv.isHandling = false
-			clearGiftRewardInfo()
 			return
 		}
 
