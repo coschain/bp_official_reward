@@ -273,11 +273,11 @@ func (sv *RewardDistributeService) handleDistribute()  {
 			} else {
 				sv.startDistribute(curPeriod, sBlkTime, eBlkTime ,sBlkNum, eBlkNum)
 				latestPeriod = curPeriod - 1
+				clearGiftRewardInfo()
 			}
 		}
 	}
 	sv.isHandling = false
-	clearGiftRewardInfo()
 }
 
 func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Time, eTime time.Time, startBlk uint64, endBlk uint64)  {
