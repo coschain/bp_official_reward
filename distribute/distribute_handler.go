@@ -69,6 +69,7 @@ var (
 	cacheSv  *cacheService
 	isEstimating bool
 	topBpList []*grpcpb.BlockProducerResponse
+	voteData  *types.HistoricalVotingData
 
 )
 
@@ -115,6 +116,7 @@ type DistributeToBpResult struct {
 	curPeriodVotersList []*plugins.ProducerVoteRecord
 	err error
 }
+
 
 type cacheService struct {
 	estimateRewardInfo *types.EstimatedRewardInfoModel
@@ -1128,6 +1130,8 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 
 	var (
 		list []*types.EstimatedRewardInfo
+		validVoterCount = 0
+		maxROI float64 = 0
 	)
 	rewardInfo := &types.EstimatedRewardInfoModel{
 		StartBlockNumber: strconv.FormatUint(sBlkNum, 10),
@@ -1200,6 +1204,11 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 			info.IsDistributable = true
 			info.EstimatedAnnualizedROI = utils.FormatFloatValue(ROI, 6)
 			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount).String()
+
+			validVoterCount += len(voterList)
+            if maxROI < ROI {
+            	maxROI = ROI
+			}
 		}
 
 		for _,topBp := range topBpList {
@@ -1214,7 +1223,16 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 
 	rewardInfo.List = list
 	sort.Sort(rewardInfo)
-	logger.Infof("EstimateCurrentPeriodReward: finish estimate next period:%v", nextPeriod)
+
+
+	if validVoterCount > 0 {
+		if voteData == nil {
+			voteData = &types.HistoricalVotingData{}
+		}
+		//update voter cache data
+		voteData.VotersNumber = strconv.Itoa(validVoterCount)
+		voteData.MaxROI = utils.FormatFloatValue(maxROI, 6)
+	}
 	return rewardInfo, nil, types.StatusSuccess
 }
 
@@ -1240,23 +1258,26 @@ func filterNotGeneratedBlockBp(allBpList []*plugins.ProducerVoteState, genList [
 }
 
 func GetHistoricalVotingData() (*types.HistoricalVotingData, error, int) {
-	//1. get total voters count
-	totalNum,err := db.CalcTotalVotersNumber()
-	if err != nil {
-		return nil, errors.New("fail to calculate total voters number"), types.StatusGetTotalVoterCountError
+	if voteData != nil && utils.CheckIsNotEmptyStr(voteData.VotersNumber) && utils.CheckIsNotEmptyStr(voteData.MaxROI) {
+		//use cache data
+		return voteData,nil,types.StatusSuccess
 	}
+	defer func() {
+		estimateCurrentPeriodReward()
+	}()
 
-	//2. get max ROI
-	ROI,err := db.GetMaxROIOfBpReward()
+
+	latestPeriod,err := db.GetLatestDistributedPeriod(true)
 	if err != nil {
-		return nil, errors.New("fail to fetch max ROI"), types.StatusGetMaxROIError
+		return nil, errors.New("fail to get latest period"), types.StatusGetLatestPeriodError
 	}
-	data := &types.HistoricalVotingData{
-		VotersNumber: strconv.FormatUint(totalNum, 10),
-		MaxROI: utils.FormatFloatValue(ROI, 6),
+	//use last period data
+	data,err := db.GetVoterStatisticsDataOfPeriod(latestPeriod)
+	if err != nil {
+		return nil, errors.New("fail to get last vote data"), types.StatusDbQueryError
 	}
+	voteData = data
 	return data,nil,types.StatusSuccess
-
 }
 
 

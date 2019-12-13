@@ -1027,7 +1027,7 @@ func GetMaxROIOfBpReward() (float64,error) {
 			return 0, nil
 		}
 	}
-	err = db.Model(types.BpRewardRecord{}).Select("MAX(annualized_rate)").Where("reward_type = ?", types.RewardTypeToBp).Row().Scan(&maxROI)
+	err = db.Model(types.BpRewardRecord{}).Select("MAX(annualized_rate)").Where("reward_type = ?", types.RewardTypeToVoter).Row().Scan(&maxROI)
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetMaxROIOfBpReward: fail to get max ROI of bp reward, the error is %v", err)
@@ -1156,4 +1156,49 @@ func GetRewardRecordById(id string) (*types.BpRewardRecord,error) {
 		}
 	}
 	return &rec,nil
+}
+
+func GetVoterStatisticsDataOfPeriod(period uint64) (*types.HistoricalVotingData, error) {
+	log := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		log.Errorf("GetVoterStatisticsDataOfPeriod: fail to get db,the error is %v", err)
+		return nil,err
+	}
+	var (
+		voterCnt int
+		maxROI = "0"
+	)
+	//get total voter count
+	err = db.Model(types.BpRewardRecord{}).Select("COUNT(voter)").
+		Where("period = ? AND reward_type = ?", period, types.RewardTypeToVoter).Row().Scan(&voterCnt)
+	if err != nil {
+		log.Errorf("GetVoterStatisticsDataOfPeriod: fail to get total voter of period %v,the error is %v", period, err)
+		return nil, err
+	}
+	//get max ROI
+	bpFilter := "''"
+	listLen := len(config.OfficialBpList)
+	filterSql := fmt.Sprintf("period = %v AND reward_type = %v", period, types.RewardTypeToBp)
+	if listLen > 0 {
+		bpFilter = ""
+		for idx,v := range config.OfficialBpList{
+			bpFilter += fmt.Sprintf("'%v'",v)
+			if idx + 1 < listLen {
+				bpFilter += ","
+			}
+		}
+		filterSql = fmt.Sprintf("period = %v AND reward_type = %v AND bp in (%v)", period, types.RewardTypeToBp, bpFilter)
+
+	}
+    err =  db.Model(types.BpRewardRecord{}).Select("MAX(annualized_rate)").Where(filterSql).Row().Scan(&maxROI)
+    if err != nil {
+		log.Errorf("GetVoterStatisticsDataOfPeriod: fail to get max ROI of period %v,the error is %v", period, err)
+		return nil, err
+	}
+    data := &types.HistoricalVotingData{
+    	VotersNumber: strconv.Itoa(voterCnt),
+    	MaxROI: maxROI,
+	}
+    return data,nil
 }
