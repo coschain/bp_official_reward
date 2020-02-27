@@ -1,6 +1,8 @@
 package types
 
 import (
+	"bp_official_reward/config"
+	"bp_official_reward/utils"
 	"time"
 )
 
@@ -18,11 +20,18 @@ const (
 
 type AccountInfo struct {
 	AccountId   string       `gorm:"primary_key"`
-	Time     int64           `gorm:"not null"`
-	Name  string             `gorm:"not null"`
-	Balance uint64			 `gorm:"not null"`
-	Vest uint64				 `gorm:"not null"`
+	Time     int64           `gorm:"not null;index"`
+	Name  string             `gorm:"not null;index"`
+	Balance uint64			 `gorm:"not null;index"`
+	Vest uint64				 `gorm:"not null;index"`
 	StakeVestFromMe uint64	 `gorm:"not null"`
+}
+
+func (log *AccountInfo) TableName() string {
+	if utils.CheckIsNotEmptyStr(config.GetExtraAccountInfoTableName()) {
+		return config.GetExtraAccountInfoTableName()
+	}
+	return "account_infos"
 }
 
 type BpVoteRecord struct {
@@ -37,9 +46,16 @@ type BpVoteRecord struct {
 
 type BpVoteRelation struct {
 	VoteId   string  `gorm:"primary_key"`
-	Voter    string  `gorm:"not null"`
-	Producer string  `gorm:"not null"`
-	Time     int64   `gorm:"not null"`
+	Voter    string  `gorm:"not null;index"`
+	Producer string  `gorm:"not null;index"`
+	Time     int64   `gorm:"not null;index"`
+}
+
+func (log *BpVoteRelation) TableName() string {
+	if utils.CheckIsNotEmptyStr(config.GetExtraBpVoteRelationTableName()) {
+		return config.GetExtraBpVoteRelationTableName()
+	}
+	return "bp_vote_relations"
 }
 
 type BpRewardRecord struct {

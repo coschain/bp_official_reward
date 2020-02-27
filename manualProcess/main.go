@@ -15,6 +15,7 @@ func addCommands() {
 	rootCmd.AddCommand(command.StartCmd())
 	rootCmd.AddCommand(command.AutoSendCmd())
 	rootCmd.AddCommand(command.ReprocessCmd())
+	rootCmd.AddCommand(command.SyncInfoCmd())
 }
 
 func main()  {

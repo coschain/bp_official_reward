@@ -50,6 +50,8 @@ type EnvConfig struct {
 	CacheTimeInterval  string `json:"cacheTimeInterval"`
 	TicketBpMemoPrefix string `json:"ticketBpMemoPrefix"`
 	TicketReceiveAccount string `json:"ticketReceiveAccount"`
+	ExtraAccountsInfoTableName string `json:"extraAccountsInfoTableName"`
+	ExtraVoteRelationTableName string `json:"extraVoteRelationTableName"`
 }
 
 type RewardConfig struct {
@@ -270,4 +272,20 @@ func CheckCosAccountIsValid(addr string) bool {
 		return false
 	}
 	return true
+}
+
+func GetExtraAccountInfoTableName() string {
+	tName := rewardConfig.ExtraAccountsInfoTableName
+	if tName != "" && len(tName) > 0 {
+		return tName
+	}
+	return  "account_infos"
+}
+
+func GetExtraBpVoteRelationTableName() string {
+	tName := rewardConfig.ExtraVoteRelationTableName
+	if tName != "" && len(tName) > 0 {
+		return rewardConfig.ExtraVoteRelationTableName
+	}
+	return "bp_vote_relations"
 }

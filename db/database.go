@@ -329,7 +329,7 @@ func BatchInsertUserVestInfo(list []*types.AccountInfo) error {
 		logger.Errorf("BatchInsertUserVestInfo: fail to get db,the error is %v", err)
 		return err
 	}
-	sql := "INSERT INTO account_infos (account_id, time, name, balance, vest, stake_vest_from_me) VALUES"
+	sql := fmt.Sprintf("INSERT INTO %v (account_id, time, name, balance, vest, stake_vest_from_me) VALUES", config.GetExtraAccountInfoTableName())
 	for i,info := range list {
 		if i + 1 == length {
 			sql += fmt.Sprintf("('%s',%v,'%s',%v,%v,%v);", info.AccountId, info.Time, info.Name, info.Balance, info.Vest, info.StakeVestFromMe)
@@ -412,7 +412,7 @@ func BatchInsertVoteRelation(list []*types.BpVoteRelation) error {
 		logger.Errorf("BatchInsertVoteRelation: fail to get db,the error is %v", err)
 		return err
 	}
-	sql := "INSERT INTO bp_vote_relations (vote_id, voter, producer, time) VALUES"
+	sql := fmt.Sprintf("INSERT INTO %v (vote_id, voter, producer, time) VALUES", config.GetExtraBpVoteRelationTableName())
 	for i,relation := range list {
 		if i + 1 == length {
 			sql += fmt.Sprintf("('%s','%s','%s',%v);", relation.VoteId, relation.Voter, relation.Producer, relation.Time)
@@ -666,8 +666,10 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 		infoList []*types.AccountInfo
 		finalList []*types.AccountInfo
 	)
+	voteRelationTable := config.GetExtraBpVoteRelationTableName()
+	accountInfoTable := config.GetExtraAccountInfoTableName()
 	//get all vote record from observe db
-	joinSql := fmt.Sprintf("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > %v AND time <= %v AND bp_vote_relations.producer = '%v') as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName)
+	joinSql := fmt.Sprintf("INNER JOIN (SELECT DISTINCT %v.voter FROM %v WHERE time > %v AND time <= %v AND %v.producer = '%v') as t1 ON %v.name = t1.voter", voteRelationTable, voteRelationTable, sTime, endTime, voteRelationTable, bpName, accountInfoTable)
 	voterFilter := "''"
 	listLen := len(voterList)
 	if listLen > 0 {
@@ -678,9 +680,12 @@ func GetAllRewardedVotersOfPeriodByBp(bpName string, sTime int64, endTime int64,
 				voterFilter += ","
 			}
 		}
-		joinSql = fmt.Sprintf("INNER JOIN (SELECT DISTINCT bp_vote_relations.voter FROM bp_vote_relations WHERE time > %v AND time <= %v AND bp_vote_relations.producer = '%v' AND bp_vote_relations.voter NOT IN (%v)) as t1 ON account_infos.name = t1.voter", sTime, endTime,bpName, voterFilter)
+		joinSql = fmt.Sprintf("INNER JOIN (SELECT DISTINCT %v.voter FROM %v WHERE time > %v AND time <= %v AND %v.producer = '%v' AND %v.voter NOT IN (%v)) as t1 ON %v.name = t1.voter", voteRelationTable, voteRelationTable, sTime, endTime, voteRelationTable, bpName, voteRelationTable, voterFilter, accountInfoTable)
 	}
-	err = db.Table("account_infos").Select("MIN(account_infos.vest) as vest,account_infos.name").Joins(joinSql).Where("account_infos.time > ? AND account_infos.time <= ?", sTime, endTime).Group("account_infos.name").Order("name").Scan(&infoList).Error
+	groupSql := fmt.Sprintf("%v.name", accountInfoTable)
+	selectSql := fmt.Sprintf("MIN(%v.vest) as vest,%v.name", accountInfoTable, accountInfoTable)
+	whereSql := fmt.Sprintf("%v.time > %v AND %v.time <= %v", accountInfoTable, sTime, accountInfoTable,endTime)
+	err = db.Table(accountInfoTable).Select(selectSql).Joins(joinSql).Where(whereSql).Group(groupSql).Order("name").Scan(&infoList).Error
 	if err != nil {
 		if err != gorm.ErrRecordNotFound {
 			logger.Errorf("GetAllRewardedVotersOfPeriodByBp: fail to get voters, the error is %v", err)
@@ -1201,4 +1206,68 @@ func GetVoterStatisticsDataOfPeriod(period uint64) (*types.HistoricalVotingData,
     	MaxROI: maxROI,
 	}
     return data,nil
+}
+
+func GetAccountInfoRecordsByRangeTime(tName string, sTime int64, eTime int64) ([]*types.AccountInfo, error) {
+	if !utils.CheckIsNotEmptyStr(tName) {
+		return nil, errors.New("table name is empty")
+	}
+	log := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		log.Errorf("GetAccountInfoRecordsByRangeTime: fail to get db,the error is %v", err)
+		return nil,err
+	}
+	var infoList []*types.AccountInfo
+	sql := fmt.Sprintf("time >= %v", sTime)
+	if eTime >= sTime {
+		sql += fmt.Sprintf(" AND time <= %v", eTime)
+	}
+	rows,err := db.Table(tName).Select("*").Where(sql).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var info types.AccountInfo
+		err = db.ScanRows(rows, &info)
+		if err != nil {
+			return nil, err
+		} else {
+			infoList = append(infoList, &info)
+		}
+	}
+	return infoList, nil
+}
+
+func GetVoteRelationsByRangeTime(tName string, sTime int64, eTime int64) ([]*types.BpVoteRelation, error) {
+	if !utils.CheckIsNotEmptyStr(tName) {
+		return nil, errors.New("table name is empty")
+	}
+	log := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		log.Errorf("GetVoteRelationsByRangeTime: fail to get db,the error is %v", err)
+		return nil,err
+	}
+	var relationList []*types.BpVoteRelation
+	sql := fmt.Sprintf("time >= %v", sTime)
+	if eTime >= sTime {
+		sql += fmt.Sprintf(" AND time <= %v", eTime)
+	}
+	rows,err := db.Table(tName).Select("*").Where(sql).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var info types.BpVoteRelation
+		err = db.ScanRows(rows, &info)
+		if err != nil {
+			return nil, err
+		} else {
+			relationList = append(relationList, &info)
+		}
+	}
+	return relationList, nil
 }
