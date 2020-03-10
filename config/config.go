@@ -27,6 +27,12 @@ type BlockLogDbInfo struct {
 	BlockLogDbPort     string `json:"blockLogDbPort"`
 }
 
+type ExtraDistributeBpInfo struct {
+	BpName string `json:"bpName"`
+	DistributeStartNum uint64 `json:"distributeStartNum"`
+	SnapShotStartNum   uint64 `json:"snapShotStartNum"`
+}
+
 type EnvConfig struct {
 	CosSenderAcct   string    `json:"cosSenderAcct"`
 	CosSenderPrivKey string   `json:"cosSenderPrivKey"`
@@ -52,6 +58,7 @@ type EnvConfig struct {
 	TicketReceiveAccount string `json:"ticketReceiveAccount"`
 	ExtraAccountsInfoTableName string `json:"extraAccountsInfoTableName"`
 	ExtraVoteRelationTableName string `json:"extraVoteRelationTableName"`
+	ExtraRewardBpList []*ExtraDistributeBpInfo `json:"extraRewardBpList"`
 }
 
 type RewardConfig struct {
@@ -288,4 +295,51 @@ func GetExtraBpVoteRelationTableName() string {
 		return rewardConfig.ExtraVoteRelationTableName
 	}
 	return "bp_vote_relations"
+}
+
+func GetExtraRewardBpInfoList() []*ExtraDistributeBpInfo {
+	if rewardConfig != nil {
+		return rewardConfig.ExtraRewardBpList
+	}
+	return nil
+}
+
+func CheckExtraBpCanDistribute(bpName string, curBlkNum uint64) bool {
+	if len(bpName) > 0 {
+		bpList := GetExtraRewardBpInfoList()
+		if bpList != nil && len(bpList) > 0 {
+			for _,info := range bpList{
+				if info.BpName == bpName && curBlkNum >= info.DistributeStartNum {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func GetAllExtraRewardBpNameList() []string {
+	bpList := GetExtraRewardBpInfoList()
+	var nameList []string
+	if bpList != nil && len(bpList) > 0 {
+		for _,info := range bpList{
+			if len(info.BpName) > 0 {
+				nameList = append(nameList, info.BpName)
+			}
+		}
+	}
+	return nameList
+}
+
+func GetAllCanDistributeExtraRewardBpNameList(curBlkNum uint64) []string {
+	var nameList []string
+	bpList := GetExtraRewardBpInfoList()
+	if bpList != nil && len(bpList) > 0 {
+		for _,info := range bpList{
+			if curBlkNum >= info.DistributeStartNum && len(info.BpName) > 0 {
+				nameList = append(nameList, info.BpName)
+			}
+		}
+	}
+	return nameList
 }

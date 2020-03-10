@@ -390,7 +390,7 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 		}
 
 		for _,data := range statistics {
-			isDistributableBp := CheckIsDistributableBp(data.BlockProducer)
+			isDistributableBp := CheckIsDistributableBpContainValidExtraBp(data.BlockProducer, endBlk)
 			// calculate total reward of bp(cold start + ecological reward)
 			blockAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 			giftReward := getGiftRewardAmountOfBp(data.BlockProducer, giftTicketRewardList)
@@ -485,7 +485,12 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 	curPeriodGiftRewardList := info.curPeriodGiftRewardList
 	curYear := getYearByPeriod(period)
 	sv.logger.Infof("startDistribute: single block reward of year:%v is %v", curYear, singleBlkColdStartReward.String())
-	for _,bp := range officialBpList {
+	distributeBpList := officialBpList
+	extraBpList := config.GetAllCanDistributeExtraRewardBpNameList(endBlk)
+	if extraBpList != nil && len(extraBpList) > 0 {
+		distributeBpList = append(distributeBpList, extraBpList...)
+	}
+	for _,bp := range distributeBpList {
 		//1.calculate bp reward of this week
 		var (
 			generatedBlkNum uint64
@@ -517,6 +522,10 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 			if err != nil {
 				sv.logger.Errorf("startDistribute: Fail to get generated block of bp:%v, the error is %v", bp, err)
 				isBlkCntValid = false
+			} else if generatedBlkNum < 1 {
+				isBlkCntValid = false
+				sv.logger.Errorf("startDistribute: bp:%v generated block of is less than 1", bp)
+				break
 			}
 		}
 		//calculate all voter's total vest of bp
@@ -693,7 +702,7 @@ func ManualProcessDistribute(model *types.ManualProcessModel)  {
 			}
 			disType := TransferTypePending
 			if rec.RewardType == types.RewardTypeToBp {
-				if CheckIsDistributableBp(rec.Bp) {
+				if CheckIsDistributableBpContainAllExtraBp(rec.Bp) {
 					disType = TransferTypeOfficialBp
 				}
 			} else {
@@ -926,7 +935,7 @@ func getTotalVestOfVoters(list []*types.AccountInfo, isFilterDisBp bool) decimal
 		isContain := true
 		if !checkIsValidVoterVest(acct.Vest) {
 			isContain = false
-		} else if isFilterDisBp && CheckIsDistributableBp(acct.Name) {
+		} else if isFilterDisBp && CheckIsDistributableBpContainAllExtraBp(acct.Name) {
 			isContain = false
 		}
 		if isContain {
@@ -1355,6 +1364,31 @@ func CheckIsDistributableBp(bpName string) bool {
 		if bp == bpName {
 			return true
 		}
+	}
+	return false
+}
+
+func CheckIsDistributableBpContainAllExtraBp(bpName string) bool {
+	if CheckIsDistributableBp(bpName) {
+		return true
+	}
+	extraBpList := config.GetAllExtraRewardBpNameList()
+	if extraBpList != nil && len(extraBpList) > 0 {
+		for _,bp := range extraBpList{
+			if bp == bpName {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func CheckIsDistributableBpContainValidExtraBp(bpName string, curBlkNum uint64) bool {
+	if CheckIsDistributableBp(bpName) {
+		return true
+	}
+	if config.CheckExtraBpCanDistribute(bpName, curBlkNum) {
+		return true
 	}
 	return false
 }
