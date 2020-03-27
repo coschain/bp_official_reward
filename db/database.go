@@ -179,7 +179,7 @@ func checkBlockStatus()  {
 	}()
 	logger.Infoln("start check block status")
 	if cosNodeDb != nil {
-		var process plugins.BlockLogProcess
+		var process iservices.DeprecatedBlockLogProgress
 		err := cosNodeDb.Take(&process).Error
 		if err != nil {
 			logger.Errorf("checkBlockStatus: fail to get cos chain block process")

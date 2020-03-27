@@ -52,7 +52,7 @@ func startService(cmd *cobra.Command, args []string)  {
 		log.Error("fail to start log service")
 		os.Exit(1)
 	}
-	logger.Debug("start swap token service")
+	logger.Debug("start bp official reward token service")
 
 	//start db service
 	err = db.StartDbService()
