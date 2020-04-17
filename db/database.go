@@ -1072,21 +1072,20 @@ func MdRewardRecord(rec *types.BpRewardRecord) error {
 	return db.Save(rec).Error
 }
 
-
 // Get official bp's gift ticket reward on block range
 func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64) ([]*types.GiftTicketRewardInfo, error) {
 	logger := logs.GetLogger()
 	prefix := config.GetGiftRewardBpNamePrefix()
 	receiveAcct := config.GetTicketRewardReceiveAccount()
 	if len(prefix) < 1 {
-		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: bp name prefix is empty,block range is(start:%v,end:%v)",sBlkNum, eBlkNum)
-		return nil,errors.New("can't get gift reward with empty bp name prefix")
+		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: bp name prefix is empty,block range is(start:%v,end:%v)", sBlkNum, eBlkNum)
+		return nil, errors.New("can't get gift reward with empty bp name prefix")
 	}
-    if len(receiveAcct) < 1 {
-		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: ticket reward deposit account is empty,block range is(start:%v,end:%v)",sBlkNum, eBlkNum)
-		return nil,errors.New("can't get gift reward with empty ticket reward deposit account")
+	if len(receiveAcct) < 1 {
+		logger.Errorf("GetGiftRewardOfOfficialBpOnRange: ticket reward deposit account is empty,block range is(start:%v,end:%v)", sBlkNum, eBlkNum)
+		return nil, errors.New("can't get gift reward with empty ticket reward deposit account")
 	}
-	db,err := getCosObserveNodeDb()
+	db, err := getCosObserveNodeDb()
 	if err != nil {
 		logger.Errorf("GetUserVestInfo: fail to get observe node db, the error is %v", db)
 		return nil, err
@@ -1097,9 +1096,50 @@ func GetGiftRewardOfOfficialBpOnRange(sBlkNum,eBlkNum uint64) ([]*types.GiftTick
 	err = db.Model(plugins.TransferRecord{}).Select("SUM(amount) as total_amount,SUBSTRING_INDEX(memo,'-',1) as bp").Where("block_height > ? AND block_height <= ? AND `to` = ? AND memo REGEXP ?", sBlkNum, eBlkNum, receiveAcct, queryPrefix).Group("bp").Scan(&rewardList).Error
 
 	if err != nil && err != gorm.ErrRecordNotFound {
-    	return nil, err
+		return nil, err
 	}
-	return rewardList,nil
+	return rewardList, nil
+}
+
+func GetAllValidVotersOfBp(bp string, sBlkNum uint64, eBlkNum uint64, sBlkTime int64, eBlkTime int64) ([]*types.AccountInfo, []*plugins.ProducerVoteRecord,error) {
+	//1.get all voter in current block range
+	curPeriodVoters,err := GetAllVoterOfBlkRange(sBlkNum, eBlkNum)
+	if err != nil {
+		fmt.Printf("GetAllValidVotersOfBp: fail to get voter of current period")
+		return nil, nil,err
+	}
+	svDb,err := getServiceDB()
+	if err != nil {
+		fmt.Printf("GetAllValidVotersOfBp:fail to get service bp, the error is %v \n", err)
+		return nil,nil, err
+	}
+
+	//2. get bp's all voter with min vest
+	var (
+		allVoters []*types.AccountInfo
+		finalList []*types.AccountInfo
+	)
+    svDb.LogMode(true)
+	sql := fmt.Sprintf("SELECT MIN(vest) as vest,name FROM %v WHERE `name` in (SELECT DISTINCT `name`  FROM %v WHERE `name` in (SELECT DISTINCT voter FROM %v WHERE producer = \"%v\" AND time > %v AND time <= %v)) AND time > %v AND time <= %v GROUP BY `name` ORDER BY `name`", config.GetExtraAccountInfoTableName(), config.GetExtraAccountInfoTableName(), config.GetExtraBpVoteRelationTableName(),bp, sBlkTime, eBlkTime, sBlkTime, eBlkTime)
+	err = svDb.Raw(sql).Scan(&allVoters).Error
+	if err != nil {
+		fmt.Printf("GetAllValidVotersOfBp: fail to get all voters, the error is %v \n", err)
+	}
+	for _,origin := range allVoters {
+		isCurPeriodVoter := false
+		//filter all voter which has vote record in this period
+		for _,curPeriodVoter := range curPeriodVoters {
+			if origin.Name == curPeriodVoter.Voter {
+				isCurPeriodVoter = true
+				break
+			}
+		}
+		if !isCurPeriodVoter && origin.Vest >= 10000000 {
+			finalList = append(finalList, origin)
+		}
+	}
+	return finalList, curPeriodVoters, nil
+
 }
 
 func CheckOnePeriodIsDistribute(period uint64) (bool,error) {
