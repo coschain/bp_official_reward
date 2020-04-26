@@ -58,26 +58,16 @@ func handelDataSync(cmd *cobra.Command, args []string)  {
 	}
 	defer db.CloseDbService()
 	if syncType == 0 {
-		list,err := db.GetAccountInfoRecordsByRangeTime(fromTableName, sTime, eTime)
+		err := db.CopyOldAccountInfoRecords(fromTableName, sTime, eTime)
 		if err != nil {
-			logger.Printf("AccountInfoSync:fail to get account info of table:%v, start time is %v, end time is %v, the error is %v\n",fromTableName,sTime, eTime, err)
-			return
-		}
-		err = db.BatchInsertUserVestInfo(list)
-		if err != nil {
-			logger.Printf("AccountInfoSync: fail to batch insert account info , the error is %v \n", err)
+			logger.Printf("AccountInfoSync: fail to sync account info , the error is %v \n", err)
 		} else {
 			logger.Printf("AccountInfoSync: sync account info successfully")
 		}
 	} else  if syncType == 1 {
-		list,err := db.GetVoteRelationsByRangeTime(fromTableName, sTime, eTime)
+		err := db.CopyOldVoteRelationRecords(fromTableName, sTime, eTime)
 		if err != nil {
-			logger.Printf("VoteRelationSync:fail to get account info of table:%v, start time is %v, end time is %v, the error is %v \n",fromTableName, sTime, eTime, err)
-			return
-		}
-		err = db.BatchInsertVoteRelation(list)
-		if err != nil {
-			logger.Printf("VoteRelationSync: fail to batch insert vote relation, the error is %v \n", err)
+			logger.Printf("VoteRelationSync: fail to sync vote relation, the error is %v \n", err)
 		} else {
 			logger.Printf("VoteRelationSync: sync vote relation successfully")
 		}

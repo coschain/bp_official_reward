@@ -179,7 +179,7 @@ func checkBlockStatus()  {
 	}()
 	logger.Infoln("start check block status")
 	if cosNodeDb != nil {
-		var process plugins.BlockLogProcess
+		var process iservices.DeprecatedBlockLogProgress
 		err := cosNodeDb.Take(&process).Error
 		if err != nil {
 			logger.Errorf("checkBlockStatus: fail to get cos chain block process")
@@ -342,6 +342,40 @@ func BatchInsertUserVestInfo(list []*types.AccountInfo) error {
 		logger.Errorf("BatchInsertUserVestInfo: fail to batch insert vote relations, the error is %v", err)
 	}
     return err
+}
+
+func CopyOldAccountInfoRecords(oldTable string, sTime int64, eTime int64) error {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("CopyOldAccountInfoRecords: fail to get db,the error is %v", err)
+		return err
+	}
+	newTable := config.GetExtraAccountInfoTableName()
+	fields := "account_id, time, name, balance, vest, stake_vest_from_me"
+	s := fmt.Sprintf("INSERT INTO %v (%v) SELECT %v FROM %v WHERE time >= %v AND time <= %v", newTable, fields, fields, oldTable, sTime, eTime)
+	_,err = db.DB().Exec(s)
+	if err != nil {
+		logger.Errorf("CopyOldAccountInfoRecords: fail to copy accounts info, the error is %v", err)
+	}
+	return err
+}
+
+func CopyOldVoteRelationRecords(oldTable string, sTime int64, eTime int64) error {
+	logger := logs.GetLogger()
+	db,err := getServiceDB()
+	if err != nil {
+		logger.Errorf("CopyOldAccountInfoRecords: fail to get db,the error is %v", err)
+		return err
+	}
+	newTable := config.GetExtraBpVoteRelationTableName()
+	fields := "vote_id, voter, producer, time"
+	s := fmt.Sprintf("INSERT INTO %v (%v) SELECT %v FROM %v WHERE time >= %v AND time <= %v", newTable, fields, fields, oldTable, sTime, eTime)
+	_,err = db.DB().Exec(s)
+	if err != nil {
+		logger.Errorf("CopyOldAccountInfoRecords: fail to copy accounts info, the error is %v", err)
+	}
+	return err
 }
 
 //

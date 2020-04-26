@@ -2,7 +2,7 @@ module bp_official_reward
 
 require (
 	github.com/coschain/cobra v0.0.0-20181106130408-77bf516f51a1
-	github.com/coschain/contentos-go v0.0.2-0.20190927112618-a83d8a3eaae3
+	github.com/coschain/contentos-go v1.0.8
 	github.com/ethereum/go-ethereum v1.9.2
 	github.com/go-sql-driver/mysql v1.4.1
 	github.com/grpc-ecosystem/go-grpc-middleware v1.1.0
