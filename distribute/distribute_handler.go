@@ -523,9 +523,9 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 				sv.logger.Errorf("startDistribute: Fail to get generated block of bp:%v, the error is %v", bp, err)
 				isBlkCntValid = false
 			} else if generatedBlkNum < 1 {
-				isBlkCntValid = false
-				sv.logger.Errorf("startDistribute: bp:%v generated block of is less than 1", bp)
-				break
+				//isBlkCntValid = false
+				sv.logger.Warnf("startDistribute: bp:%v generated block of is less than 1", bp)
+				//break
 			}
 		}
 		//calculate all voter's total vest of bp
@@ -541,7 +541,7 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 		}
 		sv.logger.Infof("startDistribute: this round voters number of bp:%v is %v, total vest of all voters is %v", bp, len(voterList), totalVest.String())
 
-		if isBlkCntValid {
+		if isBlkCntValid && generatedBlkNum > 0 {
 			sv.logger.Infof("startDistribute: generated block of bp:%v is %v", bp, generatedBlkNum)
 			//calculate total block reward of this bp
 			blockReward := calcTotalRewardOfBpOnOnePeriod(singleBlkColdStartReward, generatedBlkNum)
