@@ -887,8 +887,9 @@ func GetTotalRewardByYear(y int) uint64 {
 func CalcSingleBlockRewardByPeriod(period uint64) decimal.Decimal {
 	curYear := getYearByPeriod(period)
 	yReward := GetTotalRewardByYear(curYear)
+	factor := getYearRewardFactor(period, GetTotalRewardByYear)
 	bigAmount := new(big.Int).SetUint64(yReward)
-	totalReward := decimal.NewFromBigInt(bigAmount, 0)
+	totalReward := decimal.NewFromBigInt(bigAmount, 0).Mul(factor)
 	bigYear := new(big.Int).SetUint64(uint64(YearBlkNum))
 	singleReward,_ := totalReward.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
 	return singleReward
@@ -900,8 +901,9 @@ func CalcSingleBlockRewardOfColdStartByPeriod(period uint64) *decimal.Decimal {
 	curYear := getYearByPeriod(period)
 	yReward := GetColdStartRewardByYear(curYear)
 	if yReward > 0 {
+		factor := getYearRewardFactor(period, GetColdStartRewardByYear)
 		bigAmount := new(big.Int).SetUint64(yReward)
-		totalReward := decimal.NewFromBigInt(bigAmount, 0)
+		totalReward := decimal.NewFromBigInt(bigAmount, 0).Mul(factor)
 		bigYear := new(big.Int).SetUint64(uint64(YearBlkNum))
 		singleReward,_ := totalReward.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
 		return &singleReward
@@ -917,21 +919,19 @@ func getYearByPeriod(period uint64) int {
 	return int(curYear)
 }
 
-// get single block reward of cold start reward
-func GetSingleBlockRewardOfColdStart(t time.Time) (*decimal.Decimal,int64) {
-	timestamp := t.Unix()
-	diff := timestamp - MainNetStartTimeStamp
-	year := YearDay * 86400
-	curYear := (diff / (int64(year))) + 1
-	totalReward := GetColdStartRewardByYear(int(curYear))
-	if totalReward > 0 {
-		bigReward := new(big.Int).SetUint64(totalReward)
-		totalDecimal := decimal.NewFromBigInt(bigReward, 0)
-		bigYear := new(big.Int).SetUint64(uint64(year))
-		singleReward,_ := totalDecimal.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
-		return &singleReward,curYear
+func getYearRewardFactor(period uint64, yearRewardFunc func(int) uint64 ) decimal.Decimal {
+	endBlock := config.ServiceStarPeriodBlockNum + period * config.DistributeInterval
+	endYear := int(endBlock / uint64(YearBlkNum)) + 1
+	startBlock := endBlock - config.DistributeInterval
+	startYear := int(startBlock / uint64(YearBlkNum)) + 1
+
+	if endYear == startYear + 1 && startYear >= 1 {
+		b := uint64(YearBlkNum) * uint64(endYear - 1)
+		r0, r1 := yearRewardFunc(startYear), yearRewardFunc(endYear)
+		k0, k1 := b - startBlock, endBlock - b
+		return decimal.New(int64(r0 * k0 + r1 * k1), 0).Div(decimal.New(int64(r1 * config.DistributeInterval), 0))
 	}
-	return nil, curYear
+	return decimal.New(1, 0)
 }
 
 
