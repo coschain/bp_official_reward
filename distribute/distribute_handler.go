@@ -58,12 +58,18 @@ var (
 	   12: 162960000,
 	}
 
+	//
+	// reward = reward_v1 + reward_v2 (250,000,000 COS in total)
+	//
+	// reward_v1: the original bp reward program (150,000,000 COS in total) started in Sep 2019.
+	// reward_v2: an additional bp reward program (100,000,000 COS in total) started in Sep 2020.
+	//
 	coldStartRewardMap = map[int]uint64 {
-		1: 50850000,
-		2: 32100000,
-		3: 25500000,
-		4: 21900000,
-		5: 19650000,
+		1: 50850000 + 0,				// 50850000
+		2: 32100000 + 18339076,			// 50439076
+		3: 25500000 + 24562985,			// 50062985
+		4: 21900000 + 27652732,			// 49552732
+		5: 19650000 + 29445207,			// 49095207
 	}
 
 	cacheSv  *cacheService
