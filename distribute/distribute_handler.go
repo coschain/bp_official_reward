@@ -72,6 +72,18 @@ var (
 		5: 19650000 + 29445207,			// 49095207
 	}
 
+	//
+	// an extra reward is for official block producers only,
+	// so that voters reward rate is always 80%.
+	//
+	officialBpExtraRewardMap = map[int]uint64 {
+		1: 0,
+		2: 11416185,		// (26880000 + 50439076) * 0.8 - 50439076
+		3: 22243403,		// (40320000 + 50062985) * 0.8 - 50062985
+		4: 33097454,		// (53760000 + 49552732) * 0.8 - 49552732
+		5: 43940959,		// (67200000 + 49095207) * 0.8 - 49095207
+	}
+
 	cacheSv  *cacheService
 	isEstimating bool
 	topBpList []*grpcpb.BlockProducerResponse
@@ -111,6 +123,7 @@ type DistributeParamsModel struct {
 	endBlockTime time.Time
 	singleBlockColdStartReward decimal.Decimal
 	singleBlockTotalReward decimal.Decimal
+	singleBlockExtraOfficialBpReward decimal.Decimal
     distributeTime time.Time
 	curPeriodVotersList  []*plugins.ProducerVoteRecord
 	curPeriodGiftRewardList []*types.GiftTicketRewardInfo
@@ -308,6 +321,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		endBlockTime: eTime,
 		singleBlockColdStartReward: *coldStartSingleReward,
 		singleBlockTotalReward: bpSingleReward,
+		singleBlockExtraOfficialBpReward: CalcSingleBlockExtraOfficialBpRewardByPeriod(period),
 		distributeTime: t,
 	}
 	var (
@@ -352,6 +366,7 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 	eTime := info.endBlockTime
 	singleBlkReward := info.singleBlockTotalReward
 	singleBlkColdStartReward := info.singleBlockColdStartReward
+	singleBlkOfficialBpExtraReward := info.singleBlockExtraOfficialBpReward
 	startBlk := info.startBlockNumber
 	endBlk := info.endBlockNumber
 	distributeTime := info.distributeTime
@@ -397,12 +412,20 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 
 		for _,data := range statistics {
 			isDistributableBp := CheckIsDistributableBpContainValidExtraBp(data.BlockProducer, endBlk)
+
+			bpSingleBlkReward := singleBlkReward
+			bpSingleBlkColdStartReward := singleBlkColdStartReward
+			if CheckIsDistributableBp(data.BlockProducer) {
+				bpSingleBlkReward = bpSingleBlkReward.Add(singleBlkOfficialBpExtraReward)
+				bpSingleBlkColdStartReward = bpSingleBlkColdStartReward.Add(singleBlkOfficialBpExtraReward)
+			}
+
 			// calculate total reward of bp(cold start + ecological reward)
-			blockAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
+			blockAmount := calcTotalRewardOfBpOnOnePeriod(bpSingleBlkReward, data.TotalCount)
 			giftReward := getGiftRewardAmountOfBp(data.BlockProducer, giftTicketRewardList)
 			totalAmount := blockAmount
 			//we just distribute cold start reward for bp,because Ecological Reward distributed by cos chain
-			blockReward := calcTotalRewardOfBpOnOnePeriod(singleBlkColdStartReward, data.TotalCount)
+			blockReward := calcTotalRewardOfBpOnOnePeriod(bpSingleBlkColdStartReward, data.TotalCount)
 			distributeReward := blockReward
 			if isDistributableBp {
 				totalAmount = blockAmount.Add(giftReward)
@@ -441,13 +464,13 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 				Time: distributeTime.Unix(),
 				Status: types.ProcessingStatusDefault,
 				TotalBlockReward: totalAmount.String(),
-				SingleBlockReward: singleBlkReward.String(),
-				SingleColdStartReward: singleBlkColdStartReward.String(),
+				SingleBlockReward: bpSingleBlkReward.String(),
+				SingleColdStartReward: bpSingleBlkColdStartReward.String(),
 				SingleBlockTicketReward: giftReward.String(),
 				TotalVoterVest: totalVest.String(),
 				CreatedBlockNumber: data.TotalCount,
 				DistributeBlockNumber: endBlk,
-				AnnualizedRate: calcAnnualizedROI(data.TotalCount, singleBlkReward, RewardRate, totalVest.String(), giftReward) ,
+				AnnualizedRate: calcAnnualizedROI(data.TotalCount, bpSingleBlkReward, RewardRate, totalVest.String(), giftReward) ,
 			}
 			bpInfo := &bpRewardInfo{
 				Bp: data.BlockProducer,
@@ -485,6 +508,7 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 	eTime := info.endBlockTime
 	singleBlkReward := info.singleBlockTotalReward
 	singleBlkColdStartReward := info.singleBlockColdStartReward
+	singleBlkOfficialBpExtraReward := info.singleBlockExtraOfficialBpReward
 	startBlk := info.startBlockNumber
 	endBlk := info.endBlockNumber
 	curPeriodVotersList := info.curPeriodVotersList
@@ -497,6 +521,13 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 		distributeBpList = append(distributeBpList, extraBpList...)
 	}
 	for _,bp := range distributeBpList {
+		bpSingleBlkReward := singleBlkReward
+		bpSingleBlkColdStartReward := singleBlkColdStartReward
+		if CheckIsDistributableBp(bp) {
+			bpSingleBlkReward = bpSingleBlkReward.Add(singleBlkOfficialBpExtraReward)
+			bpSingleBlkColdStartReward = bpSingleBlkColdStartReward.Add(singleBlkOfficialBpExtraReward)
+		}
+
 		//1.calculate bp reward of this week
 		var (
 			generatedBlkNum uint64
@@ -550,7 +581,7 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 		if isBlkCntValid && generatedBlkNum > 0 {
 			sv.logger.Infof("startDistribute: generated block of bp:%v is %v", bp, generatedBlkNum)
 			//calculate total block reward of this bp
-			blockReward := calcTotalRewardOfBpOnOnePeriod(singleBlkColdStartReward, generatedBlkNum)
+			blockReward := calcTotalRewardOfBpOnOnePeriod(bpSingleBlkColdStartReward, generatedBlkNum)
 			//add gift reward
 			giftReward := getGiftRewardAmountOfBp(bp, curPeriodGiftRewardList)
 			totalReward := blockReward.Add(giftReward)
@@ -588,8 +619,8 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 					Status: types.ProcessingStatusDefault,
 					Vest: utils.CalcActualVest(acct.Vest),
 					TotalBlockReward: totalReward.String(),
-					SingleBlockReward: singleBlkReward.String(),
-					SingleColdStartReward: singleBlkColdStartReward.String(),
+					SingleBlockReward: bpSingleBlkReward.String(),
+					SingleColdStartReward: bpSingleBlkColdStartReward.String(),
 					SingleBlockTicketReward: giftReward.String(),
 					TotalVoterVest: totalVest.String(),
 					CreatedBlockNumber: generatedBlkNum,
@@ -652,6 +683,7 @@ func ManualProcessDistribute(model *types.ManualProcessModel)  {
 					endBlockTime: eBlkTime,
 					singleBlockColdStartReward: *coldStartSingleReward,
 					singleBlockTotalReward: bpSingleReward,
+					singleBlockExtraOfficialBpReward: CalcSingleBlockExtraOfficialBpRewardByPeriod(period),
 					distributeTime: time.Now(),
 				}
 				curPeriodVotersList,err := db.GetAllVoterOfBlkRange(sBlkNum, eBlkNum)
@@ -879,6 +911,13 @@ func GetEcologicalRewradByYear(y int) uint64 {
 	return 0
 }
 
+func GetExtraOfficialBpRewardByYear(y int) uint64 {
+	if val,ok := officialBpExtraRewardMap[y]; ok {
+		return val
+	}
+	return 0
+}
+
 func GetTotalRewardByYear(y int) uint64 {
 	return  GetColdStartRewardByYear(y) + GetEcologicalRewradByYear(y)
 }
@@ -911,6 +950,19 @@ func CalcSingleBlockRewardOfColdStartByPeriod(period uint64) *decimal.Decimal {
 	return nil
 }
 
+func CalcSingleBlockExtraOfficialBpRewardByPeriod(period uint64) decimal.Decimal {
+	curYear := getYearByPeriod(period)
+	yReward := GetExtraOfficialBpRewardByYear(curYear)
+	if yReward > 0 {
+		factor := getYearRewardFactor(period, GetExtraOfficialBpRewardByYear)
+		bigAmount := new(big.Int).SetUint64(yReward)
+		totalReward := decimal.NewFromBigInt(bigAmount, 0).Mul(factor)
+		bigYear := new(big.Int).SetUint64(uint64(YearBlkNum))
+		singleReward,_ := totalReward.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
+		return singleReward
+	}
+	return decimal.Zero
+}
 
 func getYearByPeriod(period uint64) int {
 	total := config.ServiceStarPeriodBlockNum + period * config.DistributeInterval
