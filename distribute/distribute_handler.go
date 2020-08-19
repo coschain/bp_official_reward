@@ -26,8 +26,6 @@ import (
 const (
 	MainNetStartTimeStamp = 1569380400 //20190925 11am
     YearDay = 365
-    RewardRate float64 = 0.79  //cold start reward rate
-    BpRewarRate = "0.8"
     //cold start reward
 	ColdStartRewardMaxYear = 5
 	//Ecological reward
@@ -415,7 +413,8 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 
 			bpSingleBlkReward := singleBlkReward
 			bpSingleBlkColdStartReward := singleBlkColdStartReward
-			if CheckIsDistributableBp(data.BlockProducer) {
+			isOfficialBp := CheckIsDistributableBp(data.BlockProducer)
+			if isOfficialBp {
 				bpSingleBlkReward = bpSingleBlkReward.Add(singleBlkOfficialBpExtraReward)
 				bpSingleBlkColdStartReward = bpSingleBlkColdStartReward.Add(singleBlkOfficialBpExtraReward)
 			}
@@ -448,17 +447,18 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 			}
 			sv.logger.Infof("startDistributeToBp: bp:%v's totalVest is %v,voters count is %v", data.BlockProducer, totalVest.String(), len(voterList))
 			//send reward to bp
-			rewardRate := RewardRate
+			rewardRate := GetVoterRewardRate(period, isOfficialBp)
+			actualRewardRate := rewardRate
 			if !isDistributableBp {
-				rewardRate = 1
+				actualRewardRate = 1
 			}
 			rec := &types.BpRewardRecord{
 				Id: utils.GenerateId(distributeTime, data.BlockProducer, data.BlockProducer, "Reward to bp"),
 				Period: period,
 				RewardType: types.RewardTypeToBp,
 				RewardAmount: distributeRewardStr,
-				RewardRate: rewardRate,
-				ColdStartRewardRate: RewardRate,
+				RewardRate: actualRewardRate,
+				ColdStartRewardRate: rewardRate,
 				Bp: data.BlockProducer,
 				Voter: data.BlockProducer,
 				Time: distributeTime.Unix(),
@@ -470,7 +470,7 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 				TotalVoterVest: totalVest.String(),
 				CreatedBlockNumber: data.TotalCount,
 				DistributeBlockNumber: endBlk,
-				AnnualizedRate: calcAnnualizedROI(data.TotalCount, bpSingleBlkReward, RewardRate, totalVest.String(), giftReward) ,
+				AnnualizedRate: calcAnnualizedROI(data.TotalCount, bpSingleBlkReward, actualRewardRate, totalVest.String(), giftReward) ,
 			}
 			bpInfo := &bpRewardInfo{
 				Bp: data.BlockProducer,
@@ -523,7 +523,8 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 	for _,bp := range distributeBpList {
 		bpSingleBlkReward := singleBlkReward
 		bpSingleBlkColdStartReward := singleBlkColdStartReward
-		if CheckIsDistributableBp(bp) {
+		isOfficialBp := CheckIsDistributableBp(bp)
+		if isOfficialBp {
 			bpSingleBlkReward = bpSingleBlkReward.Add(singleBlkOfficialBpExtraReward)
 			bpSingleBlkColdStartReward = bpSingleBlkColdStartReward.Add(singleBlkOfficialBpExtraReward)
 		}
@@ -605,14 +606,15 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 				distributeReward,_ = distributeReward.QuoRem(decimal.NewFromFloat(constants.COSTokenDecimals), 6)
 				sv.logger.Infof("startDistribute: calculate voter:%v's reward is %v, actually reward is %v, vest is %v", acct.Name, distributeReward, transferReward, utils.CalcActualVest(acct.Vest))
 
+				rr := GetVoterRewardRate(period, isOfficialBp)
 				//create reward record
 				rewardRec := &types.BpRewardRecord{
 					Id: utils.GenerateId(curTime, acct.Name, bp, "reward to voter"),
 					Period: period,
 					RewardType: types.RewardTypeToVoter,
 					RewardAmount: distributeReward.String(),
-					RewardRate: RewardRate,
-					ColdStartRewardRate: RewardRate,
+					RewardRate: rr,
+					ColdStartRewardRate: rr,
 					Bp: bp,
 					Voter: acct.Name,
 					Time: curTime.Unix(),
@@ -625,7 +627,7 @@ func (sv *RewardDistributeService) startDistributeToVoter(info DistributeParamsM
 					TotalVoterVest: totalVest.String(),
 					CreatedBlockNumber: generatedBlkNum,
 					DistributeBlockNumber: endBlk,
-					AnnualizedRate: calcAnnualizedROIByTotalReward(totalReward, RewardRate, totalVest.String()),
+					AnnualizedRate: calcAnnualizedROIByTotalReward(totalReward, rr, totalVest.String()),
 				}
 				disType := TransferTypePending
 				if bigVal.Uint64() < utils.MinVoterDistributeVest {
@@ -986,6 +988,30 @@ func getYearRewardFactor(period uint64, yearRewardFunc func(int) uint64 ) decima
 	return decimal.New(1, 0)
 }
 
+func GetVoterRewardRate(period uint64, isOfficialBp bool) float64 {
+	endBlock := config.ServiceStarPeriodBlockNum + period * config.DistributeInterval
+	endYear := int(endBlock / uint64(YearBlkNum)) + 1
+	startBlock := endBlock - config.DistributeInterval
+	startYear := int(startBlock / uint64(YearBlkNum)) + 1
+
+	voterReward := GetColdStartRewardByYear(endYear)
+	totalReward := GetTotalRewardByYear(endYear)
+
+	if endYear == startYear + 1 && startYear >= 1 {
+		b := uint64(YearBlkNum) * uint64(endYear - 1)
+		v0, v1 := GetColdStartRewardByYear(startYear), voterReward
+		t0, t1 := GetTotalRewardByYear(startYear), totalReward
+		k := float64(b - startBlock) / float64(config.DistributeInterval)
+		if isOfficialBp {
+			v0 += GetExtraOfficialBpRewardByYear(startYear)
+			v1 += GetExtraOfficialBpRewardByYear(endYear)
+		}
+		voterReward = uint64(float64(v0) * k + float64(v1) * (1.0 - k))
+		totalReward = uint64(float64(t0) * k + float64(t1) * (1.0 - k))
+	}
+
+	return float64(voterReward) / float64(totalReward)
+}
 
 func getTotalVestOfVoters(list []*types.AccountInfo, isFilterDisBp bool) decimal.Decimal {
 	total := decimal.New(0, 0)
@@ -1092,10 +1118,10 @@ func GetBpRewardHistory(period int) ([]*types.RewardInfo, error, int) {
 
 				}
 				if CheckIsDistributableBp(rec.Bp) {
-					//record.RewardRate = utils.FormatFloatValue(RewardRate, 2)
-					record.RewardRate = BpRewarRate
-					record.EveryThousandRewards = calcEveryThousandRewardByTotalReward(totalReward, RewardRate, rec.TotalVoterVest).String()
-					record.AnnualizedROI = utils.FormatFloatValue(calcAnnualizedROIByTotalReward(totalReward, RewardRate,rec.TotalVoterVest), 6)
+					rate := GetVoterRewardRate(uint64(period), true)
+					record.RewardRate = utils.FormatFloatValue(rate, 2)
+					record.EveryThousandRewards = calcEveryThousandRewardByTotalReward(totalReward, rate, rec.TotalVoterVest).String()
+					record.AnnualizedROI = utils.FormatFloatValue(calcAnnualizedROIByTotalReward(totalReward, rate, rec.TotalVoterVest), 6)
 				}
 				recList = append(recList, record)
 			}
@@ -1263,14 +1289,15 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 		}
 		info.EstimatedTotalReward = estimatedTotalReward.String()
 		logger.Infof("EstimateCurrentPeriodReward: bp:%v's estimate total reward is %v, block reward is %v, gift reward is %v", bpName, estimatedTotalReward.String(), estimatedBlkReward.String(), giftRewardAmount.String())
-		ROI := calcAnnualizedROI(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount)
+
+		rate := GetVoterRewardRate(sInfo.curPeriod, isDistributable)
+		ROI := calcAnnualizedROI(bigEstimateNum.Uint64(), singleBlkReward, rate, info.EstimatedVotersVest, giftRewardAmount)
 
 		if isDistributable {
-			//info.RewardRate = utils.FormatFloatValue(rewardRate, 2)
-			info.RewardRate = BpRewarRate
+			info.RewardRate = utils.FormatFloatValue(rate, 2)
 			info.IsDistributable = true
 			info.EstimatedAnnualizedROI = utils.FormatFloatValue(ROI, 6)
-			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount).String()
+			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, rate, info.EstimatedVotersVest, giftRewardAmount).String()
 
 			validVoterCount += len(voterList)
             if maxROI < ROI {
