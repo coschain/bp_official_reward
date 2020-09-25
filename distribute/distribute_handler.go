@@ -24,14 +24,10 @@ import (
 )
 
 const (
-	MainNetStartTimeStamp = 1569380400 //20190925 11am
     YearDay = 365
     RewardRate float64 = 0.79  //cold start reward rate
     BpRewarRate = "0.8"
-    //cold start reward
 	ColdStartRewardMaxYear = 5
-	//Ecological reward
-	EcologicalRewardMaxYear = 12
 	YearBlkNum = YearDay * 86400
 
 	TransferTypeDefault = 0
@@ -910,24 +906,6 @@ func getYearByPeriod(period uint64) int {
 	curYear := (total / year) + 1
 	return int(curYear)
 }
-
-// get single block reward of cold start reward
-func GetSingleBlockRewardOfColdStart(t time.Time) (*decimal.Decimal,int64) {
-	timestamp := t.Unix()
-	diff := timestamp - MainNetStartTimeStamp
-	year := YearDay * 86400
-	curYear := (diff / (int64(year))) + 1
-	totalReward := GetColdStartRewardByYear(int(curYear))
-	if totalReward > 0 {
-		bigReward := new(big.Int).SetUint64(totalReward)
-		totalDecimal := decimal.NewFromBigInt(bigReward, 0)
-		bigYear := new(big.Int).SetUint64(uint64(year))
-		singleReward,_ := totalDecimal.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
-		return &singleReward,curYear
-	}
-	return nil, curYear
-}
-
 
 func getTotalVestOfVoters(list []*types.AccountInfo, isFilterDisBp bool) decimal.Decimal {
 	total := decimal.New(0, 0)
