@@ -25,7 +25,7 @@ import (
 
 const (
     YearDay = 365
-    RewardRate float64 = 0.79  //cold start reward rate
+    RewardRate float64 = 0.8  //cold start reward rate
     BpRewarRate = "0.8"
 	ColdStartRewardMaxYear = 5
 	YearBlkNum = YearDay * 86400
@@ -54,12 +54,27 @@ var (
 	   12: 162960000,
 	}
 
+	totalRewardMap = map[int]uint64 {
+		1: ecologicalRewardMap[1] + 50850000,
+		2: ecologicalRewardMap[2] + 32100000 + 18339076,
+		3: ecologicalRewardMap[3] + 25500000 + 24562985,
+		4: ecologicalRewardMap[4] + 21900000 + 27652732,
+		5: ecologicalRewardMap[5] + 19650000 + 29445207,
+		6: ecologicalRewardMap[6],
+		7: ecologicalRewardMap[7],
+		8: ecologicalRewardMap[8],
+		9: ecologicalRewardMap[9],
+		10: ecologicalRewardMap[10],
+		11: ecologicalRewardMap[11],
+		12: ecologicalRewardMap[12],
+	}
+
 	coldStartRewardMap = map[int]uint64 {
 		1: 50850000,
-		2: 32100000,
-		3: 25500000,
-		4: 21900000,
-		5: 19650000,
+		2: uint64(RewardRate * float64(totalRewardMap[2])),
+		3: uint64(RewardRate * float64(totalRewardMap[3])),
+		4: uint64(RewardRate * float64(totalRewardMap[4])),
+		5: uint64(RewardRate * float64(totalRewardMap[5])),
 	}
 
 	cacheSv  *cacheService
@@ -618,7 +633,7 @@ func ManualProcessDistribute(model *types.ManualProcessModel)  {
 				//re-distribute to bp and voters of one period
 				isDistributed,err := db.CheckOnePeriodIsDistribute(period)
 				if err != nil {
-					logger.Errorf("ManualProcessDistribute: fail to check period:%v whether distributed, the error is %v", err)
+					logger.Errorf("ManualProcessDistribute: fail to check period:%v whether distributed, the error is %v", period, err)
 					return
 				}
 				if isDistributed {
@@ -665,7 +680,7 @@ func ManualProcessDistribute(model *types.ManualProcessModel)  {
 					}
 					isDistributed,err := db.CheckOnePeriodBpOrVoterIsDistribute(isToBp,period)
 					if err != nil {
-						logger.Errorf("ManualProcessDistribute: fail to check period:%v whether voters or bp distributed, the error is %v", err)
+						logger.Errorf("ManualProcessDistribute: fail to check period:%v whether voters or bp distributed, the error is %v", period, err)
 						return
 					}
 					if isDistributed {
@@ -870,33 +885,41 @@ func GetEcologicalRewradByYear(y int) uint64 {
 }
 
 func GetTotalRewardByYear(y int) uint64 {
-	return  GetColdStartRewardByYear(y) + GetEcologicalRewradByYear(y)
+	if val,ok := totalRewardMap[y]; ok {
+		return val
+	}
+	return 0
 }
 
-// get total reward(cold start + ecological reward) of a block
-func CalcSingleBlockRewardByPeriod(period uint64) decimal.Decimal {
-	curYear := getYearByPeriod(period)
-	yReward := GetTotalRewardByYear(curYear)
-	bigAmount := new(big.Int).SetUint64(yReward)
+func calcSingleBlockRewardOfPeriod(period uint64, yearlyRewardFunc func(int)uint64) decimal.Decimal {
+	startBlock := getStartBlockNumByPeriod(period)
+	endBlock := startBlock + config.DistributeInterval - 1
+	startYear, endYear := int(startBlock / uint64(YearBlkNum)) + 1, int(endBlock / uint64(YearBlkNum)) + 1
+	yearReward := uint64(0)
+	if startYear == endYear {
+		yearReward = yearlyRewardFunc(startYear)
+	} else {
+		startYearReward, endYearReward := yearlyRewardFunc(startYear), yearlyRewardFunc(endYear)
+		b := uint64(YearBlkNum) * uint64(endYear - 1)
+		kStart, kEnd := b - startBlock, endBlock - b + 1
+		yearReward = uint64((float64(startYearReward) * float64(kStart) + float64(endYearReward) * float64(kEnd)) / float64(config.DistributeInterval))
+	}
+	bigAmount := new(big.Int).SetUint64(yearReward)
 	totalReward := decimal.NewFromBigInt(bigAmount, 0)
 	bigYear := new(big.Int).SetUint64(uint64(YearBlkNum))
 	singleReward,_ := totalReward.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
 	return singleReward
+}
 
+// get total reward(cold start + ecological reward) of a block
+func CalcSingleBlockRewardByPeriod(period uint64) decimal.Decimal {
+	return calcSingleBlockRewardOfPeriod(period, GetTotalRewardByYear)
 }
 
 // get cold start reward of single block by period
 func CalcSingleBlockRewardOfColdStartByPeriod(period uint64) *decimal.Decimal {
-	curYear := getYearByPeriod(period)
-	yReward := GetColdStartRewardByYear(curYear)
-	if yReward > 0 {
-		bigAmount := new(big.Int).SetUint64(yReward)
-		totalReward := decimal.NewFromBigInt(bigAmount, 0)
-		bigYear := new(big.Int).SetUint64(uint64(YearBlkNum))
-		singleReward,_ := totalReward.QuoRem(decimal.NewFromBigInt(bigYear, 0), 6)
-		return &singleReward
-	}
-	return nil
+	r := calcSingleBlockRewardOfPeriod(period, GetColdStartRewardByYear)
+	return &r
 }
 
 
