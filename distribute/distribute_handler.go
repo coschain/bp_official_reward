@@ -54,12 +54,20 @@ var (
 	   12: 162960000,
 	}
 
+	coldStartRewardMapForBp = map[int]uint64 {
+		1: 50850000,
+		2: 32100000 + 18339076,
+		3: 25500000 + 24562985,
+		4: 21900000 + 27652732,
+		5: 19650000 + 29445207,
+	}
+
 	totalRewardMap = map[int]uint64 {
-		1: ecologicalRewardMap[1] + 50850000,
-		2: ecologicalRewardMap[2] + 32100000 + 18339076,
-		3: ecologicalRewardMap[3] + 25500000 + 24562985,
-		4: ecologicalRewardMap[4] + 21900000 + 27652732,
-		5: ecologicalRewardMap[5] + 19650000 + 29445207,
+		1: ecologicalRewardMap[1] + coldStartRewardMapForBp[1],
+		2: ecologicalRewardMap[2] + coldStartRewardMapForBp[2],
+		3: ecologicalRewardMap[3] + coldStartRewardMapForBp[3],
+		4: ecologicalRewardMap[4] + coldStartRewardMapForBp[4],
+		5: ecologicalRewardMap[5] + coldStartRewardMapForBp[5],
 		6: ecologicalRewardMap[6],
 		7: ecologicalRewardMap[7],
 		8: ecologicalRewardMap[8],
@@ -69,7 +77,7 @@ var (
 		12: ecologicalRewardMap[12],
 	}
 
-	coldStartRewardMap = map[int]uint64 {
+	coldStartRewardMapForVoters = map[int]uint64 {
 		1: 50850000,
 		2: uint64(RewardRate * float64(totalRewardMap[2])),
 		3: uint64(RewardRate * float64(totalRewardMap[3])),
@@ -115,6 +123,7 @@ type DistributeParamsModel struct {
 	startBlockTime time.Time
 	endBlockTime time.Time
 	singleBlockColdStartReward decimal.Decimal
+	singleBlockColdStartRewardForBp decimal.Decimal
 	singleBlockTotalReward decimal.Decimal
     distributeTime time.Time
 	curPeriodVotersList  []*plugins.ProducerVoteRecord
@@ -304,6 +313,11 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		sv.logger.Errorf("startDistribute: not support distribute for year %v", curYear)
 		return
 	}
+	coldStartSingleRewardForBp := CalcSingleBlockRewardOfColdStartForBpByPeriod(period)
+	if coldStartSingleRewardForBp == nil {
+		sv.logger.Errorf("startDistribute: not support distribute for year %v", curYear)
+		return
+	}
 	bpSingleReward := CalcSingleBlockRewardByPeriod(period)
 	paramsModel := DistributeParamsModel{
 		period: period,
@@ -312,6 +326,7 @@ func (sv *RewardDistributeService) startDistribute(period uint64, sTime time.Tim
 		startBlockTime: sTime,
 		endBlockTime: eTime,
 		singleBlockColdStartReward: *coldStartSingleReward,
+		singleBlockColdStartRewardForBp: *coldStartSingleRewardForBp,
 		singleBlockTotalReward: bpSingleReward,
 		distributeTime: t,
 	}
@@ -402,6 +417,11 @@ func (sv *RewardDistributeService) startDistributeToBp(info DistributeParamsMode
 
 		for _,data := range statistics {
 			isDistributableBp := CheckIsDistributableBpContainValidExtraBp(data.BlockProducer, endBlk)
+			if isDistributableBp {
+				singleBlkColdStartReward = info.singleBlockColdStartReward
+			} else {
+				singleBlkColdStartReward = info.singleBlockColdStartRewardForBp
+			}
 			// calculate total reward of bp(cold start + ecological reward)
 			blockAmount := calcTotalRewardOfBpOnOnePeriod(singleBlkReward, data.TotalCount)
 			giftReward := getGiftRewardAmountOfBp(data.BlockProducer, giftTicketRewardList)
@@ -648,6 +668,11 @@ func ManualProcessDistribute(model *types.ManualProcessModel)  {
 					sv.logger.Errorf("ManualProcessDistribute: not support distribute for year %v", curYear)
 					return
 				}
+				coldStartSingleRewardForBp := CalcSingleBlockRewardOfColdStartForBpByPeriod(period)
+				if coldStartSingleRewardForBp == nil {
+					sv.logger.Errorf("ManualProcessDistribute: not support distribute for year %v", curYear)
+					return
+				}
 				bpSingleReward := CalcSingleBlockRewardByPeriod(period)
 				paramsModel := DistributeParamsModel{
 					period: period,
@@ -656,6 +681,7 @@ func ManualProcessDistribute(model *types.ManualProcessModel)  {
 					startBlockTime: sBlkTime,
 					endBlockTime: eBlkTime,
 					singleBlockColdStartReward: *coldStartSingleReward,
+					singleBlockColdStartRewardForBp: *coldStartSingleRewardForBp,
 					singleBlockTotalReward: bpSingleReward,
 					distributeTime: time.Now(),
 				}
@@ -871,7 +897,7 @@ func (sv *RewardDistributeService)logDistributeBpInfo(period uint64, list []*typ
 }
 
 func GetColdStartRewardByYear(y int) uint64 {
-	if val,ok := coldStartRewardMap[y]; ok {
+	if val,ok := coldStartRewardMapForVoters[y]; ok {
 		return val
 	}
 	return 0
@@ -886,6 +912,13 @@ func GetEcologicalRewradByYear(y int) uint64 {
 
 func GetTotalRewardByYear(y int) uint64 {
 	if val,ok := totalRewardMap[y]; ok {
+		return val
+	}
+	return 0
+}
+
+func GetColdStartRewardForBpByYear(y int) uint64 {
+	if val,ok := coldStartRewardMapForBp[y]; ok {
 		return val
 	}
 	return 0
@@ -922,6 +955,11 @@ func CalcSingleBlockRewardOfColdStartByPeriod(period uint64) *decimal.Decimal {
 	return &r
 }
 
+// get cold start reward of single block by period
+func CalcSingleBlockRewardOfColdStartForBpByPeriod(period uint64) *decimal.Decimal {
+	r := calcSingleBlockRewardOfPeriod(period, GetColdStartRewardForBpByYear)
+	return &r
+}
 
 func getYearByPeriod(period uint64) int {
 	total := config.ServiceStarPeriodBlockNum + period * config.DistributeInterval
