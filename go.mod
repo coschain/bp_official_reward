@@ -1,7 +1,5 @@
 module bp_official_reward
 
-go 1.15
-
 require (
 	github.com/coschain/cobra v0.0.0-20181106130408-77bf516f51a1
 	github.com/coschain/contentos-go v1.0.8
