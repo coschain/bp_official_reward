@@ -55,7 +55,7 @@ func (checker* RewardResultChecker) checkRewardResult()  {
 	rewardRecs,err := db.GetAllNotSuccessRewardRecords()
 	if err != nil {
 		logger.Errorf(fmt.Sprintf("CheckRewardResult: fail to get reward records, the error is %v", err))
-		checker.isChecking = true
+		checker.isChecking = false
 		return
 	}
 	logger.Debugf("CheckRewardResult: reward records number is %v", len(rewardRecs))
