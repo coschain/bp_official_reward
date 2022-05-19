@@ -347,6 +347,7 @@ func BatchInsertUserVestInfo(list []*types.AccountInfo) error {
 		sign++
 	}
 	if sign > 1 {
+		sql = strings.TrimRight(sql, ",") + ";"
 		_,err = db.DB().Exec(sql)
 		if err != nil {
 			logger.Errorf("BatchInsertUserVestInfo: fail to batch insert vote relations, the error is %v", err)
