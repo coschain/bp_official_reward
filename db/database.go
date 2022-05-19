@@ -28,6 +28,7 @@ var (
 	checkInterval = 2 * time.Minute
 	stop  chan bool
 	isChecking bool
+	batchInsertLimit = 5000
 )
 
 func StartDbService() error {
@@ -330,16 +331,26 @@ func BatchInsertUserVestInfo(list []*types.AccountInfo) error {
 		return err
 	}
 	sql := fmt.Sprintf("INSERT INTO %v (account_id, time, name, balance, vest, stake_vest_from_me) VALUES", config.GetExtraAccountInfoTableName())
-	for i,info := range list {
-		if i + 1 == length {
+	sign := 1
+	for _,info := range list {
+		if sign % batchInsertLimit == 0 {
 			sql += fmt.Sprintf("('%s',%v,'%s',%v,%v,%v);", info.AccountId, info.Time, info.Name, info.Balance, info.Vest, info.StakeVestFromMe)
+			_,err = db.DB().Exec(sql)
+			if err != nil {
+				logger.Errorf("BatchInsertUserVestInfo: fail to batch insert vote relations, the error is %v", err)
+			}
+			sign = 0
+			sql = fmt.Sprintf("INSERT INTO %v (account_id, time, name, balance, vest, stake_vest_from_me) VALUES", config.GetExtraAccountInfoTableName())
 		} else {
 			sql += fmt.Sprintf("('%s',%v,'%s',%v,%v,%v),", info.AccountId, info.Time, info.Name, info.Balance, info.Vest, info.StakeVestFromMe)
 		}
+		sign++
 	}
-	_,err = db.DB().Exec(sql)
-	if err != nil {
-		logger.Errorf("BatchInsertUserVestInfo: fail to batch insert vote relations, the error is %v", err)
+	if sign > 1 {
+		_,err = db.DB().Exec(sql)
+		if err != nil {
+			logger.Errorf("BatchInsertUserVestInfo: fail to batch insert vote relations, the error is %v", err)
+		}
 	}
     return err
 }
@@ -447,16 +458,27 @@ func BatchInsertVoteRelation(list []*types.BpVoteRelation) error {
 		return err
 	}
 	sql := fmt.Sprintf("INSERT INTO %v (vote_id, voter, producer, time) VALUES", config.GetExtraBpVoteRelationTableName())
-	for i,relation := range list {
-		if i + 1 == length {
+	sign := 1
+	for _,relation := range list {
+		if sign % batchInsertLimit == 0 {
 			sql += fmt.Sprintf("('%s','%s','%s',%v);", relation.VoteId, relation.Voter, relation.Producer, relation.Time)
+			_,err = db.DB().Exec(sql)
+			if err != nil {
+				logger.Errorf("BatchInsertVoteRelation: fail to batch insert vote relations, the error is %v", err)
+			}
+			sign = 0
+			sql = fmt.Sprintf("INSERT INTO %v (vote_id, voter, producer, time) VALUES", config.GetExtraBpVoteRelationTableName())
 		} else {
 			sql += fmt.Sprintf("('%s','%s','%s',%v),", relation.VoteId, relation.Voter, relation.Producer, relation.Time)
 		}
+		sign++
 	}
-	_,err = db.DB().Exec(sql)
-	if err != nil {
-		logger.Errorf("BatchInsertVoteRelation: fail to batch insert vote relations, the error is %v", err)
+	if sign > 1 {
+		sql = strings.TrimRight(sql, ",") + ";"
+		_,err = db.DB().Exec(sql)
+		if err != nil {
+			logger.Errorf("BatchInsertVoteRelation: fail to batch insert vote relations, the error is %v", err)
+		}
 	}
 	return err
 }
