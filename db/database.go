@@ -593,6 +593,8 @@ func InsertRewardRecord(record *types.BpRewardRecord) error {
 func getDbFilterCondition(officialBpList []string, column string) string {
 	filter := ""
 	var filterList []string
+	// 过滤重复值
+	officialBpList = removeDuplicate(officialBpList)
 	for _,name := range officialBpList {
 		str := fmt.Sprintf("%v='%v'", column, name)
 		filterList = append(filterList, str)
@@ -601,6 +603,21 @@ func getDbFilterCondition(officialBpList []string, column string) string {
 		filter = strings.Join(filterList, " OR ")
 	}
 	return filter
+}
+
+// 通过map主键唯一的特性过滤重复元素
+func removeDuplicate(arr []string) []string {
+    resArr := make([]string, 0)
+    tmpMap := make(map[string]interface{})
+    for _, val := range arr {
+        //判断主键为val的map是否存在
+        if _, ok := tmpMap[val]; !ok {
+            resArr = append(resArr, val)
+            tmpMap[val] = nil
+        }
+    }
+  
+    return resArr
 }
 
 //
