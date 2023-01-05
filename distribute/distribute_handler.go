@@ -1253,10 +1253,13 @@ func estimateCurrentPeriodReward() (*types.EstimatedRewardInfoModel, error, int)
 			info.EstimatedAnnualizedROI = utils.FormatFloatValue(ROI, 6)
 			info.EstimatedThousandRewards = calcEveryThousandReward(bigEstimateNum.Uint64(), singleBlkReward, RewardRate, info.EstimatedVotersVest, giftRewardAmount).String()
 
-			validVoterCount += len(voterList)
             if maxROI < ROI {
             	maxROI = ROI
 			}
+		}
+
+		if CheckIsDistributableBpContainAllExtraBp(data.BlockProducer) && data.TotalCount > 0 {
+			validVoterCount += len(voterList)
 		}
 
 		for _,topBp := range topBpList {
