@@ -3,10 +3,10 @@ package snapshot
 import (
 	"bp_official_reward/config"
 	"bp_official_reward/db"
-	"bp_official_reward/distribute"
 	"bp_official_reward/logs"
-	"github.com/sirupsen/logrus"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 type BpSyncService struct {
@@ -47,17 +47,17 @@ func (s *BpSyncService) snapshot() {
 	curTime := time.Now()
 	s.logger.Infof("Start snapshot: the timestamp is %v", curTime.Unix())
 
-	lib,err := db.GetLib()
-	if err != nil {
-		s.logger.Errorf("snapshot: fail to get latest lib on time %v, the error is %v", curTime.Unix(), err)
-		return
-	}
-	year := lib / (distribute.YearBlkNum) + 1
-	if year > distribute.ColdStartRewardMaxYear {
-		//after 5 year, not need to snapshot
-		s.logger.Infof("snapshot: not need to snapshot on time:%v, on year %v", curTime, year)
-		return
-	}
+	// lib,err := db.GetLib()
+	// if err != nil {
+	// 	s.logger.Errorf("snapshot: fail to get latest lib on time %v, the error is %v", curTime.Unix(), err)
+	// 	return
+	// }
+	// year := lib / (distribute.YearBlkNum) + 1
+	// if year > distribute.ColdStartRewardMaxYear {
+	// 	//after 5 year, not need to snapshot
+	// 	s.logger.Infof("snapshot: not need to snapshot on time:%v, on year %v", curTime, year)
+	// 	return
+	// }
 
 	////1. get official bp vote record
 	//recList,err := db.GetBpVoteRecords(curTime, config.OfficialBpList)
