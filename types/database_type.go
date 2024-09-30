@@ -14,8 +14,8 @@ const (
 	ProcessingStatusGenTxFail = 4  //generate transfer to vest hash fail
 	ProcessingStatusPending = 5  // use to mark the only statistics not distribute reward by service in the early stage
 
-	RewardTypeToVoter = 0   //distribute reward to bp
-	RewardTypeToBp = 1      //distribute reward to voter
+	RewardTypeToVoter = 0   //distribute reward to voter
+	RewardTypeToBp = 1      //distribute reward to bp
 )
 
 type AccountInfo struct {
