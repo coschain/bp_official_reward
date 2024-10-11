@@ -9,18 +9,19 @@ import (
 	"bp_official_reward/utils"
 	"errors"
 	"fmt"
-	"github.com/coschain/contentos-go/app/plugins"
-	"github.com/coschain/contentos-go/common/constants"
-	"github.com/coschain/contentos-go/prototype"
-	"github.com/coschain/contentos-go/rpc/pb"
-	"github.com/robfig/cron"
-	"github.com/shopspring/decimal"
-	"github.com/sirupsen/logrus"
 	"math/big"
 	"sort"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/coschain/contentos-go/app/plugins"
+	"github.com/coschain/contentos-go/common/constants"
+	"github.com/coschain/contentos-go/prototype"
+	grpcpb "github.com/coschain/contentos-go/rpc/pb"
+	"github.com/robfig/cron"
+	"github.com/shopspring/decimal"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -83,6 +84,13 @@ var (
 		3: uint64(RewardRate * float64(totalRewardMap[3])),
 		4: uint64(RewardRate * float64(totalRewardMap[4])),
 		5: uint64(RewardRate * float64(totalRewardMap[5])),
+		6: uint64(RewardRate * float64(totalRewardMap[6])),
+		7: uint64(RewardRate * float64(totalRewardMap[7])),
+		8: uint64(RewardRate * float64(totalRewardMap[8])),
+		9: uint64(RewardRate * float64(totalRewardMap[9])),
+		10: uint64(RewardRate * float64(totalRewardMap[10])),
+		11: uint64(RewardRate * float64(totalRewardMap[11])),
+		12: uint64(RewardRate * float64(totalRewardMap[12])),
 	}
 
 	cacheSv  *cacheService
